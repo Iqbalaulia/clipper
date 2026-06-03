@@ -198,6 +198,11 @@ function handleUpdate(data) {
     evtSource.close();
     setLoading(false);
     showDownload(data.file);
+
+    // Otomatis generate copy jika API key sudah ada
+    if (geminiKeyInput && geminiKeyInput.value.trim() !== '') {
+      btnGenerateAi.click();
+    }
   }
 
   // Error
@@ -323,6 +328,8 @@ if (savedKey) geminiKeyInput.value = savedKey;
 
 btnGenerateAi.addEventListener('click', async () => {
   const url = urlInput.value.trim();
+  const start = startInput.value.trim();
+  const end = endInput.value.trim();
   const apiKey = geminiKeyInput.value.trim();
 
   if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
@@ -342,7 +349,7 @@ btnGenerateAi.addEventListener('click', async () => {
     const res = await fetch('/generate-copy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, api_key: apiKey }),
+      body: JSON.stringify({ url, api_key: apiKey, start, end }),
     });
     
     const data = await res.json();

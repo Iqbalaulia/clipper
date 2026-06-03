@@ -179,26 +179,36 @@ def _sse(data: dict) -> str:
 
 @app.route("/generate-copy", methods=["POST"])
 def generate_copy():
-    data = request.json
+    """Meminta AI (Groq Llama 3) untuk membuat copywriting berdasarkan deskripsi & waktu video."""
+    data = request.get_json(force=True)
     url = data.get("url")
     api_key = data.get("api_key")
+    start_time = data.get("start", "")
+    end_time = data.get("end", "")
 
     if not url or not api_key:
-        return jsonify({"error": "URL dan API Key wajib diisi."}), 400
+        return jsonify({"error": "URL dan API Key wajib diisi"}), 400
 
     try:
-        # 1. Ambil metadata dengan yt-dlp
-        yt_cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-warnings", url]
-        result = subprocess.run(yt_cmd, capture_output=True, text=True, check=True)
-        info = json.loads(result.stdout)
+        # 1. Ekstrak metadata video dengan yt-dlp
+        cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        info = json.loads(r.stdout)
+        
+        title = info.get("title", "Video tanpa judul")
+        description = info.get("description", "")
+        # Batasi panjang deskripsi agar tidak membebani konteks AI
+        if len(description) > 1000:
+            description = description[:1000] + "..."
 
-        title = info.get("title", "Video")
-        description = info.get("description", "")[:1000] # Batasi max 1000 karakter
+        time_context = ""
+        if start_time and end_time:
+            time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan copywriting kamu relevan dengan cuplikan spesifik ini!"
 
-        # 2. Siapkan prompt untuk Gemini
+        # 2. Siapkan prompt untuk Llama 3
         prompt = f"""Kamu adalah Social Media Manager profesional. Buatkan draft copywriting viral untuk TikTok, Instagram Reels, dan YouTube Shorts berdasarkan video berikut:
 Judul: {title}
-Deskripsi: {description}
+Deskripsi: {description}{time_context}
 
 Format output yang diinginkan:
 🌟 **JUDUL VIDEO (Bait/Hook):**

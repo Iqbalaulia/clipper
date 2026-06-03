@@ -311,48 +311,52 @@
     </div>
 
     <!-- ── Download Success Card ── -->
-    <div class="download-card" id="download-card">
+    <div class="download-card" id="download-card" style="padding: 30px;">
       <span class="success-icon">🎉</span>
       <h3>Video Berhasil Dipotong!</h3>
-      <p id="download-name" style="font-family:'JetBrains Mono',monospace; font-size:.85rem; color:#4ade80; margin-bottom: 15px;"></p>
       
-      <!-- Video Preview -->
-      <div class="video-preview-wrap">
-        <video id="preview-video" controls preload="metadata"></video>
-      </div>
-
-      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-        <a id="download-link" href="#" class="btn-download" download>
-          ⬇️ &nbsp;Simpan File
-        </a>
-        <button class="btn-new" id="btn-new">+ Clip Baru</button>
-      </div>
-    </div>
-
-    <!-- ── AI Copywriter Card ── -->
-    <div class="card ai-card" id="ai-card">
-      <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>✨ AI Social Media Copywriter</span>
-        <button id="btn-copy-ai" class="btn-new" style="padding: 4px 10px; font-size: 0.75rem; background: rgba(124,106,255,0.1); border-color: var(--accent-primary); color: var(--accent-primary); display: none;">📋 Copy</button>
-      </div>
-      <p class="field-hint" style="margin-bottom: 15px;">Buat judul viral, caption, hashtag, dan Call-to-Action secara otomatis berdasarkan metadata video aslinya!</p>
-      
-      <div class="field" style="margin-bottom: 15px;">
-        <label for="gemini-key">Groq API Key <span>(Alternatif Gratis & Cepat)</span></label>
-        <div class="input-wrap">
-          <span class="input-icon">🔑</span>
-          <input type="password" id="gemini-key" placeholder="gsk_..." />
+      <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px; text-align: left;">
+        
+        <!-- Kolom Kiri: Video Preview -->
+        <div style="flex: 1; min-width: 300px;">
+          <p id="download-name" style="font-family:'JetBrains Mono',monospace; font-size:.85rem; color:#4ade80; margin-bottom: 15px; text-align: center;"></p>
+          <div class="video-preview-wrap">
+            <video id="preview-video" controls preload="metadata"></video>
+          </div>
+          <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <a id="download-link" href="#" class="btn-download" download>
+              ⬇️ &nbsp;Simpan File
+            </a>
+            <button class="btn-new" id="btn-new">+ Clip Baru</button>
+          </div>
         </div>
-        <span class="field-hint">Dapatkan instan dan GRATIS di <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent-primary)">console.groq.com</a>.</span>
-      </div>
 
-      <button type="button" class="btn-clip" id="btn-generate-ai" style="background: linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%); margin-bottom: 15px;">
-        <div class="spinner" id="ai-spinner" style="border-top-color: #fff; display: none;"></div>
-        <span class="btn-label" id="ai-btn-label">✨ Generate Copy</span>
-      </button>
+        <!-- Kolom Kanan: AI Copywriter -->
+        <div style="flex: 1; min-width: 300px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
+          <div class="card-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <span style="font-size: 1.1rem;">✨ AI Social Media Copywriter</span>
+            <button id="btn-copy-ai" class="btn-new" style="padding: 4px 10px; font-size: 0.75rem; background: rgba(124,106,255,0.1); border-color: var(--accent-primary); color: var(--accent-primary); display: none;">📋 Copy</button>
+          </div>
+          <p class="field-hint" style="margin-bottom: 15px;">Buat judul viral, caption, hashtag, dan CTA otomatis berdasarkan potongan video ini.</p>
+          
+          <div class="field" style="margin-bottom: 15px;">
+            <label for="gemini-key">Groq API Key</label>
+            <div class="input-wrap">
+              <span class="input-icon">🔑</span>
+              <input type="password" id="gemini-key" placeholder="gsk_..." />
+            </div>
+          </div>
 
-      <div id="ai-result-wrap" style="display: none;">
-        <textarea id="ai-result" readonly style="width: 100%; height: 250px; background: rgba(10,12,18,0.5); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-md); padding: 12px; font-family: 'Inter', sans-serif; font-size: 0.9rem; resize: vertical; line-height: 1.5;"></textarea>
+          <button type="button" class="btn-clip" id="btn-generate-ai" style="background: linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%); margin-bottom: 15px; width: 100%;">
+            <div class="spinner" id="ai-spinner" style="border-top-color: #fff; display: none;"></div>
+            <span class="btn-label" id="ai-btn-label">✨ Generate Copy</span>
+          </button>
+
+          <div id="ai-result-wrap" style="display: none;">
+            <textarea id="ai-result" readonly style="width: 100%; height: 250px; background: rgba(10,12,18,0.5); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-md); padding: 12px; font-family: 'Inter', sans-serif; font-size: 0.9rem; resize: vertical; line-height: 1.5;"></textarea>
+          </div>
+        </div>
+        
       </div>
     </div>
 
