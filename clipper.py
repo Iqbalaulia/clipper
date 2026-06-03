@@ -190,6 +190,9 @@ def run_clip(
     sub_border_style: str = "1",
     sub_outline_width: str = "2",
     sub_shadow: str = "1",
+    hook_title: str = "",
+    hook_fontsize: str = "34",
+    hook_preset: str = "yellow-pop",
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
@@ -201,6 +204,7 @@ def run_clip(
     output_filename  = f"clip_{task_id}.mp4"
     output_path      = os.path.join(output_dir, output_filename)
     temp_cut_path    = os.path.join(output_dir, f"_tmpcut_{task_id}.mp4")
+    temp_hook_sub_path = os.path.join(output_dir, f"_hook_{task_id}.srt")
 
     try:
         # ── Step 1: Download video (+ optionally subtitles) ─────────────────
@@ -261,9 +265,6 @@ def run_clip(
                     if not candidate.endswith(".srt") and not candidate.endswith(".vtt"):
                         downloaded_file = candidate
 
-        if proc.returncode != 0:
-            raise RuntimeError("yt-dlp gagal mengunduh video. Periksa URL atau koneksi internet.")
-
         # Resolve actual temp file path
         if not downloaded_file or not os.path.isfile(downloaded_file):
             candidates = [
@@ -274,9 +275,16 @@ def run_clip(
                 and not f.endswith(".srt")
                 and not f.endswith(".vtt")
             ]
-            if not candidates:
-                raise RuntimeError("File video yang diunduh tidak ditemukan di disk.")
-            downloaded_file = max(candidates, key=os.path.getmtime)
+            if candidates:
+                downloaded_file = candidates[0]
+            else:
+                downloaded_file = None
+
+        if not downloaded_file:
+            raise RuntimeError(f"Gagal mengunduh video (Exit Code: {proc.returncode}). YouTube mungkin memblokir akses atau URL tidak valid.")
+
+        if proc.returncode != 0:
+            _append_log(task_id, "⚠️ Peringatan: yt-dlp melaporkan error (mungkin gagal ambil subtitle akibat limit), tetapi video berhasil diunduh. Melanjutkan proses...")
 
         _append_log(task_id, f"[OK] Unduhan selesai: {os.path.basename(downloaded_file)}")
 
@@ -327,8 +335,14 @@ def run_clip(
         _run_ffmpeg(task_id, ffmpeg_cut_cmd, start=65, end=75, start_str=start, end_str=end)
 
         _update_task(task_id, status="processing", progress=76)
+        
+        has_hook_title = bool(hook_title)
+        if has_hook_title:
+            _append_log(task_id, f"[HOOK] Membuat judul hook: {hook_title}")
+            with open(temp_hook_sub_path, "w", encoding="utf-8") as f:
+                f.write("1\n00:00:00,000 --> 00:00:04,000\n" + hook_title + "\n")
 
-        needs_reencode = video_format != "original" or (subtitle_enabled and subtitle_type == "burn")
+        needs_reencode = video_format != "original" or (subtitle_enabled and subtitle_type == "burn") or has_hook_title
         has_sub_file = subtitle_enabled and shifted_sub_path and os.path.isfile(shifted_sub_path)
 
         if not needs_reencode:
@@ -396,6 +410,23 @@ def run_clip(
                 vf_filters.append(f"subtitles='{safe_sub}':force_style='{force_style}'")
                 _append_log(task_id, f"[CC] Membakar subtitle ke video (posisi: {subtitle_position})...")
 
+            if has_hook_title and os.path.isfile(temp_hook_sub_path):
+                safe_hook_sub = temp_hook_sub_path.replace("\\", "/").replace(":", "\\:")
+                
+                # Map presets to ASS style string properties
+                preset_styles = {
+                    "yellow-pop": "PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=2",
+                    "tiktok": "PrimaryColour=&H005C3BFF,OutlineColour=&H00FFFFFF,BorderStyle=1,Outline=3,Shadow=0",
+                    "white-box": "PrimaryColour=&H00FFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=0,Shadow=0",
+                    "neon": "PrimaryColour=&H00FFFF00,OutlineColour=&H00333300,BorderStyle=1,Outline=2,Shadow=5",
+                    "classic": "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1",
+                }
+                selected_style = preset_styles.get(hook_preset, preset_styles["yellow-pop"])
+                
+                hook_style = f"FontSize={hook_fontsize},Alignment=8,Bold=1,{selected_style},MarginV=40"
+                vf_filters.append(f"subtitles='{safe_hook_sub}':force_style='{hook_style}'")
+                _append_log(task_id, f"[HOOK] Membakar judul hook ke video (Style: {hook_preset}, Size: {hook_fontsize})...")
+
             if vf_filters:
                 ffmpeg_cmd.extend(["-vf", ",".join(vf_filters)])
 
@@ -414,7 +445,7 @@ def run_clip(
             _run_ffmpeg(task_id, ffmpeg_cmd, start=50, end=85, start_str=start, end_str=end)
 
         # ── Step 5: Cleanup ──────────────────────────────────────────────────
-        for f in [downloaded_file, subtitle_file, shifted_sub_path]:
+        for f in [downloaded_file, subtitle_file, shifted_sub_path, temp_hook_sub_path]:
             if f and os.path.isfile(f):
                 try:
                     os.remove(f)
@@ -499,6 +530,9 @@ def start_clip_thread(
     sub_border_style: str = "1",
     sub_outline_width: str = "2",
     sub_shadow: str = "1",
+    hook_title: str = "",
+    hook_fontsize: str = "34",
+    hook_preset: str = "yellow-pop",
 ):
     """Kick off the clip pipeline in a daemon thread."""
     t = threading.Thread(
@@ -508,7 +542,8 @@ def start_clip_thread(
               subtitle_auto, subtitle_position, sub_fontsize, sub_case,
               sub_bold, sub_italic, sub_underline, video_format,
               sub_primary_color, sub_outline_color, sub_back_color,
-              sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow),
+              sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
+              hook_title, hook_fontsize, hook_preset),
         daemon=True,
     )
     t.start()

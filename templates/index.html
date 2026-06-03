@@ -111,6 +111,45 @@
             <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
           </div>
 
+          <!-- Hook Title Section -->
+          <div class="field" style="margin-bottom: 24px;">
+            <label for="hook-title">Judul Hook <span>(Opsional)</span></label>
+            <div style="display: flex; gap: 8px;">
+              <div class="input-wrap" style="flex: 1;">
+                <span class="input-icon">🔥</span>
+                <input type="text" id="hook-title" placeholder="Contoh: Tonton Sampai Habis!" />
+              </div>
+              <button type="button" id="btn-generate-hook" class="btn-secondary" style="padding: 0 16px; border-radius: 12px; display: flex; align-items: center; gap: 6px; font-weight: 500; font-size: 0.9rem;">
+                <span class="btn-icon">✨</span> Auto
+              </button>
+            </div>
+            
+            <div style="display: flex; gap: 15px; margin-top: 10px;">
+              <!-- Hook Font Size -->
+              <div style="flex: 1;">
+                <label for="hook-fontsize" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Ukuran Font</label>
+                <div class="input-wrap">
+                  <input type="number" id="hook-fontsize" value="34" min="20" max="80" style="padding: 8px 12px; font-size: 0.9rem;" />
+                </div>
+              </div>
+              <!-- Hook Style -->
+              <div style="flex: 2;">
+                <label for="hook-style" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Style Judul</label>
+                <div class="input-wrap select-wrap">
+                  <select id="hook-style" style="padding: 8px 12px; font-size: 0.9rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
+                    <option value="yellow-pop">Yellow Pop (Kuning Outline Hitam)</option>
+                    <option value="tiktok">TikTok Red (Merah Outline Putih)</option>
+                    <option value="white-box">White Box (Teks Putih Kotak Hitam)</option>
+                    <option value="neon">Neon Glow (Cyan Bersinar)</option>
+                    <option value="classic">Classic White (Putih Biasa)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            
+            <span class="field-hint" style="margin-top: 8px; display: block;">Teks ini akan dibakar (burn-in) di tengah atas video selama 4 detik pertama untuk menarik perhatian penonton.</span>
+          </div>
+
 
           <!-- Subtitle Section -->
           <div class="subtitle-section">

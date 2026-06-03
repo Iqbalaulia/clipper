@@ -98,6 +98,9 @@ form.addEventListener('submit', async e => {
 
   try {
     const subtitlePosition = document.querySelector('input[name="subtitle-position"]:checked')?.value || 'bottom';
+    const hookTitleValue = $('hook-title').value.trim();
+    const hookFontsize = $('hook-fontsize') ? $('hook-fontsize').value : "34";
+    const hookPreset = $('hook-style') ? $('hook-style').value : "yellow-pop";
     
     let finalSubType = subtitleType.value;
 
@@ -106,6 +109,9 @@ form.addEventListener('submit', async e => {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
         url, start, end,
+        hook_title:        hookTitleValue,
+        hook_fontsize:     hookFontsize,
+        hook_preset:       hookPreset,
 
         subtitle_enabled:  subtitleToggle.checked,
         subtitle_lang:     subtitleLang.value,
@@ -312,6 +318,48 @@ function syncPositionRow() {
 }
 
 subtitleType.addEventListener('change', syncPositionRow);
+
+// ── Auto Generate Hook Title ───────────────────────────────────────────────
+const btnGenerateHook = $('btn-generate-hook');
+const hookTitleInput = $('hook-title');
+
+if (btnGenerateHook) {
+  btnGenerateHook.addEventListener('click', async () => {
+    const url = urlInput.value.trim();
+    const start = startInput.value.trim();
+    const end = endInput.value.trim();
+    // Re-use geminiKeyInput for Groq
+    const apiKey = geminiKeyInput ? geminiKeyInput.value.trim() : '';
+
+    if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
+    if (!apiKey) return alert('Groq API Key (di kolom AI Copywriter) wajib diisi untuk fitur ini!');
+
+    // Save key
+    localStorage.setItem('clipper_gemini_key', apiKey);
+
+    const oldContent = btnGenerateHook.innerHTML;
+    btnGenerateHook.disabled = true;
+    btnGenerateHook.innerHTML = '<span class="btn-icon">⏳</span>...';
+
+    try {
+      const res = await fetch('/generate-hook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, api_key: apiKey, start, end }),
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan');
+
+      hookTitleInput.value = data.hook_title;
+    } catch (err) {
+      alert('Error AI: ' + err.message);
+    } finally {
+      btnGenerateHook.disabled = false;
+      btnGenerateHook.innerHTML = oldContent;
+    }
+  });
+}
 
 // ── AI Copywriter Logic ──────────────────────────────────────────────────
 const geminiKeyInput = $('gemini-key');

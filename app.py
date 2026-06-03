@@ -103,10 +103,19 @@ def clip():
 
     # Video format
     video_format      = (data.get("video_format") or "original").strip()
+    
+    hook_title        = (data.get("hook_title") or "").strip()
+    hook_fontsize     = str(data.get("hook_fontsize") or "34").strip()
+    hook_preset       = (data.get("hook_preset") or "yellow-pop").strip()
 
     task_id = clipper.create_task()
+
     clipper.start_clip_thread(
-        task_id, url, start, end, OUTPUT_DIR,
+        task_id=task_id,
+        url=url,
+        start=start,
+        end=end,
+        output_dir=OUTPUT_DIR,
         subtitle_enabled=subtitle_enabled,
         subtitle_lang=subtitle_lang,
         subtitle_type=subtitle_type,
@@ -125,6 +134,9 @@ def clip():
         sub_border_style=sub_border_style,
         sub_outline_width=sub_outline_width,
         sub_shadow=sub_shadow,
+        hook_title=hook_title,
+        hook_fontsize=hook_fontsize,
+        hook_preset=hook_preset,
     )
 
     return jsonify({"task_id": task_id})
@@ -175,6 +187,79 @@ def download(filename: str):
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
+
+
+@app.route("/generate-hook", methods=["POST"])
+def generate_hook():
+    """Meminta AI (Groq Llama 3) untuk membuat hook title singkat berdasarkan video."""
+    data = request.get_json(force=True)
+    url = data.get("url")
+    api_key = data.get("api_key")
+    start_time = data.get("start", "")
+    end_time = data.get("end", "")
+
+    if not url or not api_key:
+        return jsonify({"error": "URL dan API Key wajib diisi"}), 400
+
+    try:
+        # 1. Ekstrak metadata video dengan yt-dlp
+        cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        info = json.loads(r.stdout)
+        
+        title = info.get("title", "Video tanpa judul")
+        description = info.get("description", "")
+        # Batasi panjang deskripsi agar tidak membebani konteks AI
+        if len(description) > 1000:
+            description = description[:1000] + "..."
+
+        time_context = ""
+        if start_time and end_time:
+            time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan judul relevan dengan cuplikan spesifik ini!"
+
+        # 2. Siapkan prompt untuk Llama 3
+        prompt = f"""Kamu adalah ahli pembuat Hook Video TikTok/Reels/Shorts.
+Tugas kamu adalah membuat 1 kalimat pendek (Maksimal 3-5 kata) yang SANGAT memancing rasa penasaran (clickbait positif) untuk judul video berikut:
+Judul Asli: {title}
+Deskripsi: {description}{time_context}
+
+HANYA BERIKAN teks judulnya saja, tanpa tanda kutip, tanpa penjelasan, dan gunakan huruf kapital yang sesuai. Contoh: Tonton Sampai Habis!, Fakta Mengejutkan!, Rahasia Terbongkar!"""
+
+        # 3. Panggil Groq API
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+            "max_tokens": 50
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=30
+        )
+        
+        if not response.ok:
+            return jsonify({"error": f"Groq API Error: {response.text}"}), response.status_code
+            
+        result = response.json()
+        hook_title = result["choices"][0]["message"]["content"].strip()
+        
+        # Bersihkan dari tanda kutip jika AI bandel
+        hook_title = hook_title.replace('"', '').replace("'", "")
+        
+        return jsonify({"hook_title": hook_title})
+
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": f"Gagal mengekstrak info video: {e.stderr}"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/generate-copy", methods=["POST"])
