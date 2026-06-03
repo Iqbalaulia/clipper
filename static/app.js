@@ -326,7 +326,7 @@ btnGenerateAi.addEventListener('click', async () => {
   const apiKey = geminiKeyInput.value.trim();
 
   if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
-  if (!apiKey) return alert('Gemini API Key wajib diisi!');
+  if (!apiKey) return alert('Groq API Key wajib diisi!');
 
   // Save key
   localStorage.setItem('clipper_gemini_key', apiKey);

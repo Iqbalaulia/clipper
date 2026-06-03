@@ -307,14 +307,20 @@ def run_clip(
         _append_log(task_id, f"[CUT] Memotong video dari {start} hingga {end}...")
 
         start_ff = _seconds_to_ffmpeg(start)
-        end_ff   = _seconds_to_ffmpeg(end)
+        
+        try:
+            duration = _parse_seconds(end) - _parse_seconds(start)
+            duration_ff = str(max(duration, 1.0))
+        except Exception:
+            duration_ff = _seconds_to_ffmpeg(end) # Fallback
 
         ffmpeg_cut_cmd = [
             "ffmpeg", "-y",
-            "-i", downloaded_file,
             "-ss", start_ff,
-            "-to", end_ff,
+            "-i", downloaded_file,
+            "-t", duration_ff,
             "-c", "copy",
+            "-avoid_negative_ts", "make_zero",
             temp_cut_path,
         ]
 

@@ -213,27 +213,27 @@ Format output yang diinginkan:
 🏷️ **HASHTAGS:**
 (5-8 hashtag relevan)"""
 
-        # 3. Panggil Gemini API
-        gemini_url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-2.0-flash:generateContent?key={api_key}"
-        )
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [
-                {"parts": [{"text": prompt}]}
-            ]
+        # 3. Panggil Groq API (OpenAI Compatible)
+        # Menggunakan Llama 3 8B yang sangat cepat dan gratis
+        groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
         }
-
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        
         try:
-            r = requests.post(gemini_url, headers=headers, json=payload, timeout=30)
+            r = requests.post(groq_url, headers=headers, json=payload, timeout=30)
             rd = r.json()
             if r.status_code == 200:
-                generated_text = rd["candidates"][0]["content"]["parts"][0]["text"]
+                generated_text = rd["choices"][0]["message"]["content"]
                 return jsonify({"copy": generated_text, "title": title})
             else:
                 err_msg = rd.get("error", {}).get("message", "Unknown error")
-                return jsonify({"error": f"Gemini API Error: {err_msg}"}), 400
+                return jsonify({"error": f"Groq API Error: {err_msg}"}), 400
         except Exception as e:
             return jsonify({"error": f"API Error: {str(e)}"}), 400
 
