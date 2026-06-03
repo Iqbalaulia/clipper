@@ -18,10 +18,7 @@ const styleRow        = $('style-row');
 const subFontsize     = $('sub-fontsize');
 const subCase         = $('sub-case');
 
-// Hook inputs
-const hookToggle      = $('hook-toggle');
-const hookStart       = $('hook-start');
-const hookEnd         = $('hook-end');
+
 const subBold         = $('sub-bold');
 const subItalic       = $('sub-italic');
 const subUnderline    = $('sub-underline');
@@ -102,20 +99,14 @@ form.addEventListener('submit', async e => {
   try {
     const subtitlePosition = document.querySelector('input[name="subtitle-position"]:checked')?.value || 'bottom';
     
-    // Check if hook is enabled, force burn-in for subtitles
     let finalSubType = subtitleType.value;
-    if (hookToggle.checked && subtitleToggle.checked) {
-      finalSubType = 'burn'; // Force burn-in if hook is used
-    }
 
     const res  = await fetch('/clip', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
         url, start, end,
-        hook_enabled:      hookToggle.checked,
-        hook_start:        hookStart.value,
-        hook_end:          hookEnd.value,
+
         subtitle_enabled:  subtitleToggle.checked,
         subtitle_lang:     subtitleLang.value,
         subtitle_type:     finalSubType,
@@ -302,8 +293,7 @@ function formatTimeInput(input) {
 
 formatTimeInput(startInput);
 formatTimeInput(endInput);
-formatTimeInput(hookStart);
-formatTimeInput(hookEnd);
+
 
 // ── Position & Style row: show only for burn-in ──────────────────────────
 function syncPositionRow() {

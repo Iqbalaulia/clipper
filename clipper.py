@@ -190,9 +190,6 @@ def run_clip(
     sub_border_style: str = "1",
     sub_outline_width: str = "2",
     sub_shadow: str = "1",
-    hook_enabled: bool = False,
-    hook_start: str = "0",
-    hook_end: str = "0",
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
@@ -204,8 +201,6 @@ def run_clip(
     output_filename  = f"clip_{task_id}.mp4"
     output_path      = os.path.join(output_dir, output_filename)
     temp_cut_path    = os.path.join(output_dir, f"_tmpcut_{task_id}.mp4")
-    temp_hook_path   = os.path.join(output_dir, f"_tmphook_{task_id}.mp4")
-    temp_main_path   = os.path.join(output_dir, f"_tmpmain_{task_id}.mp4")
 
     try:
         # ── Step 1: Download video (+ optionally subtitles) ─────────────────
@@ -325,7 +320,6 @@ def run_clip(
 
         _run_ffmpeg(task_id, ffmpeg_cut_cmd, start=65, end=75, start_str=start, end_str=end)
 
-        # ── Step 4: Process Video (Format & Subtitles) ──────────────────────
         _update_task(task_id, status="processing", progress=76)
 
         needs_reencode = video_format != "original" or (subtitle_enabled and subtitle_type == "burn")
@@ -343,9 +337,9 @@ def run_clip(
                     "-metadata:s:s:0", "language=" + subtitle_lang.split(",")[0].strip(),
                     output_path,
                 ]
-                _run_ffmpeg(task_id, ffmpeg_embed_cmd, start=76, end=98)
+                _run_ffmpeg(task_id, ffmpeg_embed_cmd, start=83, end=95)
             else:
-                # Nothing to do, just rename
+                # Nothing to do, just rename/move
                 import shutil
                 shutil.move(temp_cut_path, output_path)
         else:
@@ -401,51 +395,20 @@ def run_clip(
 
             ffmpeg_cmd.extend([
                 "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac" if hook_enabled else "copy",
+                "-c:a", "copy",
             ])
 
-            if has_sub_file and subtitle_type == "soft" and not hook_enabled:
+            if has_sub_file and subtitle_type == "soft":
                 ffmpeg_cmd.extend([
                     "-c:s", "mov_text",
                     "-metadata:s:s:0", "language=" + subtitle_lang.split(",")[0].strip(),
                 ])
 
-            ffmpeg_cmd.append(main_output_target)
-            _run_ffmpeg(task_id, ffmpeg_cmd, start=65 if hook_enabled else 50, end=85, start_str=start, end_str=end)
-
-        # ── Step 4.5: Combine Hook and Main Clip (if enabled) ────────────────
-        if hook_enabled:
-            _update_task(task_id, status="embedding", progress=85)
-            _append_log(task_id, "[🔄] Menggabungkan hook dengan klip utama (transisi fade)...")
-            
-            # Hitung offset untuk transisi
-            try:
-                hook_start_val = _parse_seconds(hook_start)
-                hook_end_val = _parse_seconds(hook_end)
-                hook_duration = max(0, hook_end_val - hook_start_val)
-            except Exception:
-                hook_duration = 5
-                
-            fade_duration = 0.5
-            offset = max(0.1, hook_duration - fade_duration)
-            
-            concat_cmd = [
-                "ffmpeg", "-y",
-                "-i", temp_hook_path,
-                "-i", temp_main_path,
-                "-filter_complex",
-                f"[0:v][1:v]xfade=transition=fade:duration={fade_duration}:offset={offset}[v];"
-                f"[0:a][1:a]acrossfade=d={fade_duration}[a]",
-                "-map", "[v]",
-                "-map", "[a]",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac",
-                output_path
-            ]
-            _run_ffmpeg(task_id, concat_cmd, start=85, end=99)
+            ffmpeg_cmd.append(output_path)
+            _run_ffmpeg(task_id, ffmpeg_cmd, start=50, end=85, start_str=start, end_str=end)
 
         # ── Step 5: Cleanup ──────────────────────────────────────────────────
-        for f in [downloaded_file, subtitle_file, shifted_sub_path, temp_hook_path, temp_main_path]:
+        for f in [downloaded_file, subtitle_file, shifted_sub_path]:
             if f and os.path.isfile(f):
                 try:
                     os.remove(f)
@@ -459,7 +422,7 @@ def run_clip(
         _append_log(task_id, f"[ERR] Error: {exc}")
         _update_task(task_id, status="error", error=str(exc))
 
-        for f in [output_path, temp_cut_path, temp_hook_path, temp_main_path]:
+        for f in [output_path, temp_cut_path]:
             if f and os.path.isfile(f):
                 try:
                     os.remove(f)
@@ -530,9 +493,6 @@ def start_clip_thread(
     sub_border_style: str = "1",
     sub_outline_width: str = "2",
     sub_shadow: str = "1",
-    hook_enabled: bool = False,
-    hook_start: str = "0",
-    hook_end: str = "0",
 ):
     """Kick off the clip pipeline in a daemon thread."""
     t = threading.Thread(
@@ -542,8 +502,7 @@ def start_clip_thread(
               subtitle_auto, subtitle_position, sub_fontsize, sub_case,
               sub_bold, sub_italic, sub_underline, video_format,
               sub_primary_color, sub_outline_color, sub_back_color,
-              sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
-              hook_enabled, hook_start, hook_end),
+              sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow),
         daemon=True,
     )
     t.start()

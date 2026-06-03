@@ -73,15 +73,8 @@ def clip():
     start = (data.get("start") or "").strip()
     end   = (data.get("end") or "").strip()
     
-    hook_enabled = bool(data.get("hook_enabled", False))
-    hook_start   = (data.get("hook_start") or "").strip()
-    hook_end     = (data.get("hook_end") or "").strip()
-
     if not url or not start or not end:
         return jsonify({"error": "URL, Waktu Mulai, dan Waktu Selesai wajib diisi."}), 400
-        
-    if hook_enabled and (not hook_start or not hook_end):
-        return jsonify({"error": "Waktu Mulai dan Waktu Selesai Hook wajib diisi jika Hook diaktifkan."}), 400
     if not start:
         return jsonify({"error": "Waktu mulai tidak boleh kosong."}), 400
     if not end:
@@ -132,9 +125,6 @@ def clip():
         sub_border_style=sub_border_style,
         sub_outline_width=sub_outline_width,
         sub_shadow=sub_shadow,
-        hook_enabled=hook_enabled,
-        hook_start=hook_start,
-        hook_end=hook_end,
     )
 
     return jsonify({"task_id": task_id})
@@ -223,27 +213,27 @@ Format output yang diinginkan:
 🏷️ **HASHTAGS:**
 (5-8 hashtag relevan)"""
 
-        # 3. Panggil Groq API (OpenAI Compatible)
-        # Menggunakan Llama 3 8B yang sangat cepat dan gratis
-        groq_url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
+        # 3. Panggil Gemini API
+        gemini_url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"gemini-2.0-flash:generateContent?key={api_key}"
+        )
+        headers = {"Content-Type": "application/json"}
         payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "user", "content": prompt}]
+            "contents": [
+                {"parts": [{"text": prompt}]}
+            ]
         }
-        
+
         try:
-            r = requests.post(groq_url, headers=headers, json=payload, timeout=30)
+            r = requests.post(gemini_url, headers=headers, json=payload, timeout=30)
             rd = r.json()
             if r.status_code == 200:
-                generated_text = rd["choices"][0]["message"]["content"]
+                generated_text = rd["candidates"][0]["content"]["parts"][0]["text"]
                 return jsonify({"copy": generated_text, "title": title})
             else:
                 err_msg = rd.get("error", {}).get("message", "Unknown error")
-                return jsonify({"error": f"Groq API Error: {err_msg}"}), 400
+                return jsonify({"error": f"Gemini API Error: {err_msg}"}), 400
         except Exception as e:
             return jsonify({"error": f"API Error: {str(e)}"}), 400
 
