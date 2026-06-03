@@ -44,7 +44,7 @@
   <main>
     <div class="card">
       <p class="card-title">🎬 Input Video</p>
-      <form id="clip-form" autocomplete="off">
+      <form id="clip-form" autocomplete="off" novalidate>
         <div class="field-group">
 
           <!-- URL -->
@@ -54,10 +54,9 @@
               <span class="input-icon">🔗</span>
               <input
                 id="url-input"
-                type="url"
+                type="text"
                 class="url-input"
                 placeholder="https://www.youtube.com/watch?v=..."
-                required
               />
             </div>
           </div>
@@ -307,7 +306,7 @@
           </div>
 
           <!-- Submit -->
-          <button type="submit" class="btn-clip" id="btn-clip">
+          <button type="button" class="btn-clip" id="btn-clip">
             <div class="spinner"></div>
             <span class="btn-label">✂️ &nbsp;Potong Video</span>
           </button>

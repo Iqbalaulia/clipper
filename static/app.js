@@ -78,15 +78,16 @@ async function checkDeps() {
   }
 }
 
-// ── Form Submit ──────────────────────────────────────────────────────────
-form.addEventListener('submit', async e => {
-  e.preventDefault();
+// ── Clip Button Click ─────────────────────────────────────────────────────
+btnClip.addEventListener('click', async () => {
 
   const url   = urlInput.value.trim();
   const start = startInput.value.trim();
   const end   = endInput.value.trim();
 
-  if (!url || !start || !end) return;
+  if (!url)   { alert('URL video wajib diisi!');        urlInput.focus();   return; }
+  if (!start) { alert('Waktu mulai wajib diisi!');      startInput.focus(); return; }
+  if (!end)   { alert('Waktu selesai wajib diisi!');    endInput.focus();   return; }
 
   // Reset UI
   resetUI();
@@ -98,11 +99,11 @@ form.addEventListener('submit', async e => {
 
   try {
     const subtitlePosition = document.querySelector('input[name="subtitle-position"]:checked')?.value || 'bottom';
-    const hookTitleValue = $('hook-title').value.trim();
+    const hookTitleValue = $('hook-title') ? $('hook-title').value.trim() : '';
     const hookFontsize = $('hook-fontsize') ? $('hook-fontsize').value : "34";
     const hookPreset = $('hook-style') ? $('hook-style').value : "yellow-pop";
     
-    let finalSubType = subtitleType.value;
+    let finalSubType = subtitleType ? subtitleType.value : 'soft';
 
     const res  = await fetch('/clip', {
       method:  'POST',
@@ -113,17 +114,17 @@ form.addEventListener('submit', async e => {
         hook_fontsize:     hookFontsize,
         hook_preset:       hookPreset,
 
-        subtitle_enabled:  subtitleToggle.checked,
-        subtitle_lang:     subtitleLang.value,
+        subtitle_enabled:  subtitleToggle ? subtitleToggle.checked : false,
+        subtitle_lang:     subtitleLang   ? subtitleLang.value     : 'id,en',
         subtitle_type:     finalSubType,
-        subtitle_auto:     subtitleAuto.checked,
+        subtitle_auto:     subtitleAuto   ? subtitleAuto.checked   : true,
         subtitle_position: subtitlePosition,
-        sub_fontsize:      subFontsize.value,
-        sub_case:          subCase.value,
-        sub_bold:          subBold.checked,
-        sub_italic:        subItalic.checked,
-        sub_underline:     subUnderline.checked,
-        video_format:      videoFormat.value,
+        sub_fontsize:      subFontsize    ? subFontsize.value      : '20',
+        sub_case:          subCase        ? subCase.value          : 'normal',
+        sub_bold:          subBold        ? subBold.checked        : false,
+        sub_italic:        subItalic      ? subItalic.checked      : false,
+        sub_underline:     subUnderline   ? subUnderline.checked   : false,
+        video_format:      videoFormat    ? videoFormat.value      : 'original',
         // Preset style params
         sub_primary_color: subPrimaryColor ? subPrimaryColor.value : 'FFFFFF',
         sub_outline_color: subOutlineColor ? subOutlineColor.value : '000000',

@@ -2,6 +2,17 @@
 
 Aplikasi web lokal untuk mengunduh dan memotong video dari YouTube dan 1000+ platform lainnya menggunakan **yt-dlp** dan **FFmpeg**.
 
+## ✨ Fitur Unggulan
+
+- ✂️ **Pemotongan Cepat (Lossless)**: Potong bagian video favorit Anda dengan sangat cepat menggunakan *stream copy* tanpa penurunan kualitas.
+- 📱 **Format Video Fleksibel**: Mendukung rasio asli, Vertical 9:16 (Crop Tengah / TikTok style), maupun Vertical dengan Pad Hitam.
+- 💬 **Subtitle Otomatis**: Unduh dan sisipkan *soft-sub* atau *hard-sub* (burn-in) langsung ke video.
+- 🎨 **Kustomisasi Subtitle ala CapCut**: Tersedia berbagai preset *style* teks profesional (Classic, Bold Pop, Neon Glow, Cinema, Yellow Box, dll) beserta kontrol tata letak dan ukuran.
+- 🔥 **Judul Hook (Bait) Dinamis**: Bakar teks pancingan di 4 detik pertama video lengkap dengan gaya teks keren untuk menahan audiens agar *scrolling* berhenti.
+- 🤖 **AI Auto Hook Generator**: Biarkan kecerdasan buatan (Groq Llama 3) memikirkan kalimat hook *clickbait* positif terbaik berdasarkan konteks video Anda.
+- 📝 **AI Social Media Copywriter**: Secara otomatis menyusun draf *caption* viral, CTA, dan *hashtags* (menggunakan AI) yang disesuaikan spesifik dengan durasi klip video yang Anda potong.
+- ⚡ **Real-Time Progress**: Pantau progres *download*, ekstraksi, dan render dengan UI progres modern tanpa perlu *refresh* halaman.
+
 ## 🚀 Cara Menjalankan
 
 ### 1. Prasyarat
