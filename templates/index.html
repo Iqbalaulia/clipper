@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Clipper — Potong Video Lokal</title>
+  <meta name="description" content="Aplikasi lokal untuk mengunduh dan memotong video dari YouTube dan platform lainnya menggunakan yt-dlp dan FFmpeg." />
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>" />
+</head>
+<body>
+
+<!-- Background atmosphere -->
+<div class="bg-atmosphere">
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+  <div class="bg-orb bg-orb-3"></div>
+</div>
+
+<div class="app-wrapper">
+
+  <!-- ── Header ── -->
+  <header class="app-header">
+    <div class="logo-wrap">
+      <div class="logo-icon">✂️</div>
+      <span class="logo-text">Clipper</span>
+    </div>
+    <p class="app-subtitle">Unduh &amp; potong video dari YouTube dan platform lainnya — lokal, cepat, tanpa batas.</p>
+
+    <!-- Dependency status badges -->
+    <div class="dep-banner">
+      <span class="dep-badge" id="dep-ytdlp">
+        <span class="dot"></span>
+        <span class="dep-label">yt-dlp: memeriksa…</span>
+      </span>
+      <span class="dep-badge" id="dep-ffmpeg">
+        <span class="dot"></span>
+        <span class="dep-label">FFmpeg: memeriksa…</span>
+      </span>
+    </div>
+  </header>
+
+  <!-- ── Main Form Card ── -->
+  <main>
+    <div class="card">
+      <p class="card-title">🎬 Input Video</p>
+      <form id="clip-form" autocomplete="off">
+        <div class="field-group">
+
+          <!-- URL -->
+          <div class="field">
+            <label for="url-input">URL Video <span>*</span></label>
+            <div class="input-wrap">
+              <span class="input-icon">🔗</span>
+              <input
+                id="url-input"
+                type="url"
+                class="url-input"
+                placeholder="https://www.youtube.com/watch?v=..."
+                required
+              />
+            </div>
+          </div>
+
+          <!-- Time Range -->
+          <div class="time-row">
+            <div class="field">
+              <label for="start-input">Waktu Mulai <span>*</span></label>
+              <div class="input-wrap">
+                <span class="input-icon">⏱️</span>
+                <input
+                  id="start-input"
+                  type="text"
+                  placeholder="00:01:30"
+                  required
+                  pattern="[\d:.]*"
+                  title="Format: HH:MM:SS atau detik (misal: 90)"
+                />
+              </div>
+              <span class="field-hint">HH:MM:SS atau detik mentah (misal: 90)</span>
+            </div>
+
+            <div class="field">
+              <label for="end-input">Waktu Selesai <span>*</span></label>
+              <div class="input-wrap">
+                <span class="input-icon">⏹️</span>
+                <input
+                  id="end-input"
+                  type="text"
+                  placeholder="00:02:45"
+                  required
+                  pattern="[\d:.]*"
+                  title="Format: HH:MM:SS atau detik"
+                />
+              </div>
+              <span class="field-hint">HH:MM:SS atau detik mentah (misal: 165)</span>
+            </div>
+          </div>
+
+          <!-- Output Format Section -->
+          <div class="field" style="margin-bottom: 18px;">
+            <label for="video-format">Format Video <span>*</span></label>
+            <div class="input-wrap select-wrap">
+              <span class="input-icon">📱</span>
+              <select id="video-format">
+                <option value="original">Original (Tanpa Ubah Rasio)</option>
+                <option value="vertical-crop">Vertical 9:16 (Crop Tengah — TikTok/Reels)</option>
+                <option value="vertical-pad">Vertical 9:16 (Pad Bar Hitam Atas/Bawah)</option>
+              </select>
+            </div>
+            <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
+          </div>
+
+          <!-- Hook Video Section -->
+          <div class="subtitle-section" style="margin-bottom: 18px;">
+            <div class="subtitle-toggle-row">
+              <div class="subtitle-toggle-info">
+                <span class="subtitle-icon">🪝</span>
+                <div>
+                  <p class="subtitle-title">Gunakan Hook Video</p>
+                  <p class="subtitle-desc">Sisipkan potongan pendek tanpa subtitle di awal video</p>
+                </div>
+              </div>
+              <label class="toggle-switch" for="hook-toggle">
+                <input type="checkbox" id="hook-toggle" />
+                <span class="toggle-track">
+                  <span class="toggle-thumb"></span>
+                </span>
+              </label>
+            </div>
+
+            <!-- Expanded options (shown when hook is ON) -->
+            <div class="subtitle-options" id="hook-options">
+              <div class="time-row" style="margin-top: 12px; margin-bottom: 4px;">
+                <div class="field">
+                  <label for="hook-start">Mulai Hook</label>
+                  <div class="input-wrap">
+                    <span class="input-icon">⏱️</span>
+                    <input id="hook-start" type="text" placeholder="00:00:00" pattern="[\d:.]*" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="hook-end">Selesai Hook</label>
+                  <div class="input-wrap">
+                    <span class="input-icon">⏹️</span>
+                    <input id="hook-end" type="text" placeholder="00:00:05" pattern="[\d:.]*" />
+                  </div>
+                </div>
+              </div>
+              <p class="field-hint" style="color: var(--accent-warn);">⚠️ <b>Info:</b> Mode Subtitle akan otomatis dipaksa menjadi <b>Burn-in</b> pada klip utama untuk mencegah masalah sinkronisasi (subtitle di hook akan disembunyikan).</p>
+            </div>
+          </div>
+
+          <!-- Subtitle Section -->
+          <div class="subtitle-section">
+            <!-- Toggle row -->
+            <div class="subtitle-toggle-row">
+              <div class="subtitle-toggle-info">
+                <span class="subtitle-icon">💬</span>
+                <div>
+                  <p class="subtitle-title">Tambahkan Subtitle</p>
+                  <p class="subtitle-desc">Unduh &amp; sisipkan subtitle otomatis ke dalam video</p>
+                </div>
+              </div>
+              <label class="toggle-switch" for="subtitle-toggle">
+                <input type="checkbox" id="subtitle-toggle" />
+                <span class="toggle-track">
+                  <span class="toggle-thumb"></span>
+                </span>
+              </label>
+            </div>
+
+            <!-- Expanded options (shown when toggle is ON) -->
+            <div class="subtitle-options" id="subtitle-options">
+              <div class="sub-options-grid">
+
+                <!-- Language -->
+                <div class="field">
+                  <label for="subtitle-lang">Bahasa Subtitle</label>
+                  <div class="input-wrap">
+                    <span class="input-icon">🌐</span>
+                    <input
+                      id="subtitle-lang"
+                      type="text"
+                      placeholder="id,en"
+                      value="id,en"
+                      title="Kode bahasa, pisahkan dengan koma (misal: id,en)"
+                    />
+                  </div>
+                  <span class="field-hint">Kode bahasa BCP-47 (id=Indonesia, en=English)</span>
+                </div>
+
+                <!-- Mode -->
+                <div class="field">
+                  <label for="subtitle-type">Mode Subtitle</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🎚️</span>
+                    <select id="subtitle-type">
+                      <option value="soft">Soft — dapat dinonaktifkan di player</option>
+                      <option value="burn">Burn-in — teks dibakar ke dalam video</option>
+                    </select>
+                  </div>
+                  <span class="field-hint">Burn-in memerlukan re-encode, lebih lambat</span>
+                </div>
+
+              </div>
+
+              <!-- Position selector (burn-in only) -->
+              <div class="position-row" id="position-row">
+                <p class="position-label">📍 Posisi Subtitle (Burn-in)</p>
+                <div class="position-options">
+                  <label class="pos-btn" for="pos-bottom">
+                    <input type="radio" name="subtitle-position" id="pos-bottom" value="bottom" checked />
+                    <span class="pos-card">
+                      <span class="pos-preview">
+                        <span class="pos-screen">
+                          <span class="pos-bar bottom-bar"></span>
+                        </span>
+                      </span>
+                      <span class="pos-name">Bawah</span>
+                    </span>
+                  </label>
+                  <label class="pos-btn" for="pos-center">
+                    <input type="radio" name="subtitle-position" id="pos-center" value="center" />
+                    <span class="pos-card">
+                      <span class="pos-preview">
+                        <span class="pos-screen">
+                          <span class="pos-bar center-bar"></span>
+                        </span>
+                      </span>
+                      <span class="pos-name">Tengah</span>
+                    </span>
+                  </label>
+                </div>
+                <p class="field-hint" style="margin-top:8px">Hanya berlaku untuk mode Burn-in. Soft subtitle posisinya dikontrol oleh media player.</p>
+              </div>
+
+              <!-- Style selector (burn-in only) -->
+              <div class="style-row" id="style-row" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle); display: none;">
+                <p class="position-label">🎨 Preset Style Subtitle</p>
+
+                <!-- Preset cards (rendered by JS) -->
+                <div class="preset-scroller">
+                  <div class="preset-cards" id="preset-cards"></div>
+                </div>
+
+                <!-- Manual Override Separator -->
+                <p class="preset-manual-label">✏️ Kustomisasi Manual</p>
+
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 12px;">
+                  <!-- Font Size -->
+                  <div class="field" style="flex: 1; min-width: 100px;">
+                    <label for="sub-fontsize">Ukuran Font</label>
+                    <div class="input-wrap">
+                      <input type="number" id="sub-fontsize" value="22" min="10" max="100" />
+                    </div>
+                  </div>
+                  
+                  <!-- Case -->
+                  <div class="field" style="flex: 1; min-width: 120px;">
+                    <label for="sub-case">Huruf</label>
+                    <div class="input-wrap select-wrap">
+                      <select id="sub-case">
+                        <option value="normal">Normal</option>
+                        <option value="upper">UPPERCASE</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Patterns -->
+                <div style="display: flex; gap: 15px; margin-bottom: 8px;">
+                  <label class="checkbox-row" for="sub-bold" style="margin-top: 0;">
+                    <input type="checkbox" id="sub-bold" />
+                    <span class="checkbox-box"></span>
+                    <span class="checkbox-label" style="font-weight: bold;">Bold</span>
+                  </label>
+                  <label class="checkbox-row" for="sub-italic" style="margin-top: 0;">
+                    <input type="checkbox" id="sub-italic" />
+                    <span class="checkbox-box"></span>
+                    <span class="checkbox-label" style="font-style: italic;">Italic</span>
+                  </label>
+                  <label class="checkbox-row" for="sub-underline" style="margin-top: 0;">
+                    <input type="checkbox" id="sub-underline" />
+                    <span class="checkbox-box"></span>
+                    <span class="checkbox-label" style="text-decoration: underline;">Underline</span>
+                  </label>
+                </div>
+
+                <!-- Hidden inputs for preset color/style params -->
+                <input type="hidden" id="sub-primary-color" value="FFFFFF" />
+                <input type="hidden" id="sub-outline-color" value="000000" />
+                <input type="hidden" id="sub-back-color"    value="000000" />
+                <input type="hidden" id="sub-back-alpha"    value="00" />
+                <input type="hidden" id="sub-border-style"  value="1" />
+                <input type="hidden" id="sub-outline-width" value="2" />
+                <input type="hidden" id="sub-shadow-val"    value="1" />
+              </div>
+
+              <!-- Auto sub checkbox -->
+              <label class="checkbox-row" for="subtitle-auto">
+                <input type="checkbox" id="subtitle-auto" checked />
+                <span class="checkbox-box"></span>
+                <span class="checkbox-label">Sertakan subtitle otomatis (auto-generated) jika tersedia</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <button type="submit" class="btn-clip" id="btn-clip">
+            <div class="spinner"></div>
+            <span class="btn-label">✂️ &nbsp;Potong Video</span>
+          </button>
+
+        </div>
+      </form>
+    </div>
+
+    <!-- ── Progress Card ── -->
+    <div class="card progress-section" id="progress-section">
+      <p class="card-title">📡 Progress</p>
+
+      <div class="status-row">
+        <div class="status-label">
+          <span class="pulse" id="status-pulse"></span>
+          <span id="status-label">⏳ Menunggu...</span>
+        </div>
+        <span class="progress-pct" id="progress-pct">0%</span>
+      </div>
+
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+
+      <!-- Terminal log -->
+      <div class="terminal">
+        <div class="terminal-header">
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <div class="terminal-dot"></div>
+          <span class="terminal-title">output log</span>
+        </div>
+        <div id="terminal-body"></div>
+      </div>
+
+      <!-- Error message -->
+      <div class="error-card" id="error-card">
+        <p id="error-msg"></p>
+      </div>
+    </div>
+
+    <!-- ── Download Success Card ── -->
+    <div class="download-card" id="download-card">
+      <span class="success-icon">🎉</span>
+      <h3>Video Berhasil Dipotong!</h3>
+      <p id="download-name" style="font-family:'JetBrains Mono',monospace; font-size:.85rem; color:#4ade80; margin-bottom: 15px;"></p>
+      
+      <!-- Video Preview -->
+      <div class="video-preview-wrap">
+        <video id="preview-video" controls preload="metadata"></video>
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+        <a id="download-link" href="#" class="btn-download" download>
+          ⬇️ &nbsp;Simpan File
+        </a>
+        <button class="btn-new" id="btn-new">+ Clip Baru</button>
+      </div>
+    </div>
+
+    <!-- ── AI Copywriter Card ── -->
+    <div class="card ai-card" id="ai-card">
+      <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>✨ AI Social Media Copywriter</span>
+        <button id="btn-copy-ai" class="btn-new" style="padding: 4px 10px; font-size: 0.75rem; background: rgba(124,106,255,0.1); border-color: var(--accent-primary); color: var(--accent-primary); display: none;">📋 Copy</button>
+      </div>
+      <p class="field-hint" style="margin-bottom: 15px;">Buat judul viral, caption, hashtag, dan Call-to-Action secara otomatis berdasarkan metadata video aslinya!</p>
+      
+      <div class="field" style="margin-bottom: 15px;">
+        <label for="gemini-key">Groq API Key <span>(Alternatif Gratis & Cepat)</span></label>
+        <div class="input-wrap">
+          <span class="input-icon">🔑</span>
+          <input type="password" id="gemini-key" placeholder="gsk_..." />
+        </div>
+        <span class="field-hint">Dapatkan instan dan GRATIS di <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent-primary)">console.groq.com</a>.</span>
+      </div>
+
+      <button type="button" class="btn-clip" id="btn-generate-ai" style="background: linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%); margin-bottom: 15px;">
+        <div class="spinner" id="ai-spinner" style="border-top-color: #fff; display: none;"></div>
+        <span class="btn-label" id="ai-btn-label">✨ Generate Copy</span>
+      </button>
+
+      <div id="ai-result-wrap" style="display: none;">
+        <textarea id="ai-result" readonly style="width: 100%; height: 250px; background: rgba(10,12,18,0.5); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-md); padding: 12px; font-family: 'Inter', sans-serif; font-size: 0.9rem; resize: vertical; line-height: 1.5;"></textarea>
+      </div>
+    </div>
+
+    <!-- ── Tips Card ── -->
+    <div class="card">
+      <p class="card-title">💡 Tips Penggunaan</p>
+      <div class="tips-grid">
+        <div class="tip-item">
+          <span class="tip-icon">🎯</span>
+          <div class="tip-text">
+            <h4>Format Waktu</h4>
+            <p>Gunakan <code>HH:MM:SS</code> atau angka detik seperti <code>90</code> untuk 1 menit 30 detik.</p>
+          </div>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">⚡</span>
+          <div class="tip-text">
+            <h4>Stream Copy</h4>
+            <p>Pemotongan dilakukan tanpa re-encode — sangat cepat dan tanpa kehilangan kualitas.</p>
+          </div>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">🌐</span>
+          <div class="tip-text">
+            <h4>Multi-Platform</h4>
+            <p>Mendukung YouTube, Twitter, Instagram, TikTok, dan 1000+ situs lainnya via yt-dlp.</p>
+          </div>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">📁</span>
+          <div class="tip-text">
+            <h4>Output Folder</h4>
+            <p>Semua hasil clip tersimpan otomatis di folder <code>outputs/</code> di direktori aplikasi.</p>
+          </div>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">💬</span>
+          <div class="tip-text">
+            <h4>Subtitle Otomatis</h4>
+            <p>Aktifkan subtitle untuk menyisipkan teks ke video. Mode <em>Soft</em> dapat dimatikan di player.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Footer ── -->
+  <footer class="app-footer">
+    <p>Dibuat dengan ❤️ menggunakan <strong>yt-dlp</strong> &amp; <strong>FFmpeg</strong> &nbsp;|&nbsp; Berjalan lokal di mesin Anda</p>
+  </footer>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
