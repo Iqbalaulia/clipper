@@ -130,11 +130,22 @@
               <input type="number" id="ctrl-hook-fontsize" value="34" min="20" max="80" style="padding: 8px 12px; font-size: 0.9rem;" />
             </div>
           </div>
+          <div class="field" style="flex: 1; min-width: 140px;">
+            <label for="ctrl-hook-position">Posisi Judul</label>
+            <div class="input-wrap select-wrap">
+              <span class="input-icon">📍</span>
+              <select id="ctrl-hook-position">
+                <option value="top">Atas</option>
+                <option value="center">Tengah</option>
+                <option value="bottom">Bawah</option>
+              </select>
+            </div>
+          </div>
           <div class="field" style="flex: 2; min-width: 160px;">
             <label for="ctrl-hook-style">Style Judul</label>
             <div class="input-wrap select-wrap">
               <span class="input-icon">🎨</span>
-              <select id="ctrl-hook-style" style="padding: 8px 12px; font-size: 0.9rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
+              <select id="ctrl-hook-style">
                 <option value="yellow-pop">Yellow Pop (Kuning Outline Hitam)</option>
                 <option value="tiktok">TikTok Red (Merah Outline Putih)</option>
                 <option value="white-box">White Box (Teks Putih Kotak Hitam)</option>

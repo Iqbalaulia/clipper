@@ -131,8 +131,7 @@ def clip():
     hook_fontsize     = str(data.get("hook_fontsize") or "34").strip()
     hook_preset       = (data.get("hook_preset") or "yellow-pop").strip()
     
-    use_cookies = bool(data.get("cookies", False))
-    cookies_file = COOKIES_FILE if (use_cookies and os.path.isfile(COOKIES_FILE)) else ""
+    cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
 
     task_id = clipper.create_task()
 
@@ -230,9 +229,10 @@ def generate_hook():
 
     try:
         # 1. Ekstrak metadata video dengan yt-dlp
-        cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
-        use_cookies = bool(data.get("cookies", False))
-        if use_cookies and os.path.isfile(COOKIES_FILE):
+        cmd = [
+            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url
+        ]
+        if os.path.isfile(COOKIES_FILE):
             cmd += ["--cookies", COOKIES_FILE]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(r.stdout)
@@ -380,15 +380,19 @@ def detect_moments():
     url = (data.get("url") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     num_moments = int(data.get("num_moments") or 4)
-    use_cookies = bool(data.get("cookies", False))
+    use_cookies = os.path.isfile(COOKIES_FILE)
 
     if not url: return jsonify({"error": "URL video wajib diisi."}), 400
     if not api_key: return jsonify({"error": "Groq API Key wajib diisi."}), 400
 
     try:
-        cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
-        if use_cookies and os.path.isfile(COOKIES_FILE):
-            cmd += ["--cookies", COOKIES_FILE]
+        cmd = [
+            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", 
+            "--extractor-args", "youtube:player_client=android,web", url
+        ]
+        if use_cookies:
+            cmd.insert(-1, "--cookies")
+            cmd.insert(-1, COOKIES_FILE)
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             return jsonify({"error": f"Gagal mengambil info video: {r.stderr[:300]}"}), 400
@@ -406,7 +410,7 @@ def detect_moments():
             "--output", os.path.join(OUTPUT_DIR, "_scan_%(id)s.%(ext)s"),
             "--no-playlist", url
         ]
-        if use_cookies and os.path.isfile(COOKIES_FILE):
+        if use_cookies:
             sub_cmd.insert(-1, "--cookies")
             sub_cmd.insert(-1, COOKIES_FILE)
         subprocess.run(sub_cmd, capture_output=True, text=True, timeout=60)
@@ -462,8 +466,7 @@ def clip_moments():
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
     moments = data.get("moments") or []
-    use_cookies = bool(data.get("cookies", False))
-    cookies_file = COOKIES_FILE if (use_cookies and os.path.isfile(COOKIES_FILE)) else ""
+    cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
 
     if not url or not moments:
         return jsonify({"error": "URL dan momen wajib diisi."}), 400
@@ -486,6 +489,7 @@ def clip_moments():
             hook_title=title,
             hook_fontsize=str(data.get("hook_fontsize", "34")),
             hook_preset=data.get("hook_preset", "yellow-pop"),
+            hook_position=data.get("hook_position", "top"),
             cookies=cookies_file,
         )
         task_list.append({

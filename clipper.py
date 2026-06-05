@@ -4,10 +4,13 @@ import uuid
 import threading
 import re
 import sys
+from typing import Dict, Any
 
 # Shared progress state across tasks
-_tasks = {}
+_tasks: Dict[str, Any] = {}
 _lock = threading.Lock()
+# Global lock to prevent multiple yt-dlp instances from downloading the same video concurrently
+DOWNLOAD_LOCK = threading.Lock()
 
 
 def create_task() -> str:
@@ -199,6 +202,7 @@ def run_clip(
     hook_title: str = "",
     hook_fontsize: str = "34",
     hook_preset: str = "yellow-pop",
+    hook_position: str = "top",
     cookies: str = "",
 ):
     """
@@ -207,7 +211,6 @@ def run_clip(
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    temp_path        = os.path.join(output_dir, f"_tmp_{task_id}.%(ext)s")
     output_filename  = f"clip_{task_id}.mp4"
     output_path      = os.path.join(output_dir, output_filename)
     temp_cut_path    = os.path.join(output_dir, f"_tmpcut_{task_id}.mp4")
@@ -216,88 +219,118 @@ def run_clip(
     try:
         # ── Step 1: Download video (+ optionally subtitles) ─────────────────
         _update_task(task_id, status="downloading", progress=5)
-        _append_log(task_id, "[>>] Memulai unduhan video...")
-
-        yt_dlp_cmd = [
-            sys.executable, "-m", "yt_dlp",
-            "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            "--output", temp_path,
-            "--no-playlist",
-            "--progress",
-            "--newline",
-            "--extractor-args", "youtube:player_client=android,web",
-        ]
-
-        if cookies:
-            yt_dlp_cmd += ["--cookies", cookies]
-
-        if subtitle_enabled:
-            first_lang = subtitle_lang.split(",")[0].strip()
-            yt_dlp_cmd += [
-                "--write-sub",
-                "--sub-lang", subtitle_lang,
-                "--convert-subs", "srt",
-            ]
-            if subtitle_auto:
-                yt_dlp_cmd.append("--write-auto-sub")
-            _append_log(task_id, f"[CC] Subtitle diaktifkan — bahasa: {subtitle_lang}")
-
-        yt_dlp_cmd.append(url)
+        video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11})", url)
+        video_id = video_id_match.group(1) if video_id_match else task_id
+        cache_video_path = os.path.join(output_dir, f"_cache_{video_id}.mp4")
 
         downloaded_file = None
+        has_sub_file = False
+        sub_file_path = ""
 
-        with subprocess.Popen(
-            yt_dlp_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        ) as proc:
-            for line in proc.stdout:
-                line = line.rstrip()
-                if not line:
-                    continue
-                _append_log(task_id, line)
-
-                # Parse yt-dlp progress
-                m = re.search(r"\[download\]\s+([\d.]+)%", line)
-                if m:
-                    pct = float(m.group(1))
-                    _update_task(task_id, progress=int(5 + pct * 0.55))
-
-                # Detect final merged/destination video file (not subtitle)
-                dest_match = re.search(
-                    r"\[(?:download|Merger|ffmpeg)\] Destination:\s*(.+)", line
-                )
-                if dest_match:
-                    candidate = dest_match.group(1).strip()
-                    if not candidate.endswith(".srt") and not candidate.endswith(".vtt"):
-                        downloaded_file = candidate
-
-        # Resolve actual temp file path
-        if not downloaded_file or not os.path.isfile(downloaded_file):
-            candidates = [
-                os.path.join(output_dir, f)
-                for f in os.listdir(output_dir)
-                if f.startswith(f"_tmp_{task_id}")
-                and not f.endswith(".part")
-                and not f.endswith(".srt")
-                and not f.endswith(".vtt")
-            ]
-            if candidates:
-                downloaded_file = candidates[0]
+        with DOWNLOAD_LOCK:
+            if os.path.isfile(cache_video_path):
+                _append_log(task_id, "[>>] Video sudah ada di cache. Menggunakan file lokal...")
+                downloaded_file = cache_video_path
+                
+                # Check for cached subtitle
+                if subtitle_enabled:
+                    first_lang = subtitle_lang.split(",")[0].strip()
+                    potential_sub = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.srt")
+                    if os.path.isfile(potential_sub):
+                        has_sub_file = True
+                        sub_file_path = potential_sub
             else:
-                downloaded_file = None
+                _append_log(task_id, "[>>] Memulai unduhan video...")
 
-        if not downloaded_file:
-            raise RuntimeError(f"Gagal mengunduh video (Exit Code: {proc.returncode}). YouTube mungkin memblokir akses atau URL tidak valid.")
+                yt_dlp_cmd = [
+                    sys.executable, "-m", "yt_dlp",
+                    "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                    "--merge-output-format", "mp4",
+                    "--output", cache_video_path,
+                    "--no-playlist",
+                    "--progress",
+                    "--newline",
+                ]
 
-        if proc.returncode != 0:
-            _append_log(task_id, "⚠️ Peringatan: yt-dlp melaporkan error (mungkin gagal ambil subtitle akibat limit), tetapi video berhasil diunduh. Melanjutkan proses...")
+                if cookies:
+                    yt_dlp_cmd += ["--cookies", cookies]
 
-        _append_log(task_id, f"[OK] Unduhan selesai: {os.path.basename(downloaded_file)}")
+                yt_dlp_cmd.append(url)
+                _append_log(task_id, f"[>>] Perintah yt-dlp video: {' '.join(yt_dlp_cmd)}")
+
+                proc = subprocess.Popen(
+                    yt_dlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding="utf-8", errors="replace"
+                )
+
+                while True:
+                    line = proc.stdout.readline()
+                    if not line and proc.poll() is not None:
+                        break
+                    if line:
+                        line = line.strip()
+                        # Filter output for progress
+                        if "[download]" in line and "%" in line:
+                            m = re.search(r"\[download\]\s+([\d.]+)%", line)
+                            if m:
+                                _update_task(task_id, progress=int(5 + float(m.group(1)) * 0.55))
+                        elif "[youtube]" in line or "ERROR:" in line or "[Merger]" in line:
+                            _append_log(task_id, line)
+
+                proc.wait()
+
+                if proc.returncode != 0:
+                    _append_log(task_id, "⚠️ Peringatan: yt-dlp melaporkan error (mungkin sebagian unduhan gagal), memverifikasi file...")
+
+                if os.path.isfile(cache_video_path):
+                    downloaded_file = cache_video_path
+                else:
+                    candidates = [
+                        os.path.join(output_dir, f)
+                        for f in os.listdir(output_dir)
+                        if f.startswith(f"_cache_{video_id}")
+                        and not f.endswith(".part")
+                        and not f.endswith(".srt")
+                        and not f.endswith(".vtt")
+                    ]
+                    if candidates:
+                        downloaded_file = candidates[0]
+                        
+                if not downloaded_file:
+                    raise RuntimeError(f"Gagal mengunduh video (Exit Code: {proc.returncode}). YouTube mungkin memblokir akses atau URL tidak valid.")
+                
+                # 2. Download Subtitles as a separate process
+                if subtitle_enabled:
+                    _append_log(task_id, "[>>] Mengunduh subtitle (terpisah agar tidak mengganggu video)...")
+                    first_lang = subtitle_lang.split(",")[0].strip()
+                    sub_cmd = [
+                        sys.executable, "-m", "yt_dlp",
+                        "--write-auto-sub",
+                        "--write-sub",
+                        "--sub-lang", subtitle_lang,
+                        "--convert-subs", "srt",
+                        "--skip-download",
+                        "--output", cache_video_path,
+                        "--no-playlist",
+                    ]
+                    if cookies:
+                        sub_cmd += ["--cookies", cookies]
+                    sub_cmd.append(url)
+                    
+                    # We ignore errors for subtitle download so HTTP 429 won't crash the clip
+                    subprocess.run(
+                        sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace"
+                    )
+                    
+                    potential_sub = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.srt")
+                    if os.path.isfile(potential_sub):
+                        has_sub_file = True
+                        sub_file_path = potential_sub
+                    else:
+                        _append_log(task_id, "⚠️ Gagal mengunduh subtitle (Mungkin limit HTTP 429). Klip akan dilanjutkan tanpa subtitle.")
+
+        _append_log(task_id, f"[>>] File video siap: {downloaded_file}")
 
         # ── Step 2: Find & process subtitle file ────────────────────────────
         subtitle_file   = None
@@ -434,7 +467,13 @@ def run_clip(
                 }
                 selected_style = preset_styles.get(hook_preset, preset_styles["yellow-pop"])
                 
-                hook_style = f"FontSize={hook_fontsize},Alignment=8,Bold=1,{selected_style},MarginV=40"
+                align_hook = "8" # top
+                if hook_position == "center":
+                    align_hook = "5"
+                elif hook_position == "bottom":
+                    align_hook = "2"
+                
+                hook_style = f"FontSize={hook_fontsize},Alignment={align_hook},Bold=1,{selected_style},MarginV=40"
                 vf_filters.append(f"subtitles='{safe_hook_sub}':force_style='{hook_style}'")
                 _append_log(task_id, f"[HOOK] Membakar judul hook ke video (Style: {hook_preset}, Size: {hook_fontsize})...")
 
@@ -544,6 +583,7 @@ def start_clip_thread(
     hook_title: str = "",
     hook_fontsize: str = "34",
     hook_preset: str = "yellow-pop",
+    hook_position: str = "top",
     cookies: str = "",
 ):
     """
@@ -556,7 +596,7 @@ def start_clip_thread(
               sub_bold, sub_italic, sub_underline, video_format,
               sub_primary_color, sub_outline_color, sub_back_color,
               sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
-              hook_title, hook_fontsize, hook_preset, cookies),
+              hook_title, hook_fontsize, hook_preset, hook_position, cookies),
         daemon=True,
     )
     t.start()
