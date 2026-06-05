@@ -125,6 +125,7 @@ btnClip.addEventListener('click', async () => {
         sub_italic:        subItalic      ? subItalic.checked      : false,
         sub_underline:     subUnderline   ? subUnderline.checked   : false,
         video_format:      videoFormat    ? videoFormat.value      : 'original',
+        cookies:           $('manual-cookies') ? $('manual-cookies').value : '',
         // Preset style params
         sub_primary_color: subPrimaryColor ? subPrimaryColor.value : 'FFFFFF',
         sub_outline_color: subOutlineColor ? subOutlineColor.value : '000000',
@@ -343,10 +344,12 @@ if (btnGenerateHook) {
     btnGenerateHook.innerHTML = '<span class="btn-icon">⏳</span>...';
 
     try {
+      const cookies = $('manual-cookies-toggle') ? $('manual-cookies-toggle').checked : false;
+
       const res = await fetch('/generate-hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, api_key: apiKey, start, end }),
+        body: JSON.stringify({ url, api_key: apiKey, start, end, cookies }),
       });
       
       const data = await res.json();
@@ -394,11 +397,13 @@ btnGenerateAi.addEventListener('click', async () => {
   aiResultWrap.style.display = 'none';
   btnCopyAi.style.display = 'none';
 
+  const cookies = $('manual-cookies-toggle') ? $('manual-cookies-toggle').checked : false;
+
   try {
     const res = await fetch('/generate-copy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, api_key: apiKey, start, end }),
+      body: JSON.stringify({ url, api_key: apiKey, start, end, cookies }),
     });
     
     const data = await res.json();
@@ -537,3 +542,464 @@ function applyPreset(preset) {
   if (subOutlineWidth) subOutlineWidth.value = p.outlineWidth;
   if (subShadowVal)    subShadowVal.value    = p.shadow;
 }
+
+
+// ════════════════════════════════════════════════════════════
+// AUTO-CLIP MOMEN KONTROVERSIAL — Feature Logic
+// ════════════════════════════════════════════════════════════
+
+// ── State ────────────────────────────────────────────────────
+let detectedMoments   = [];   // [{index, start, end, title, reason}]
+let selectedMoments   = new Set(); // Set of moment indices that are checked
+let batchTaskList     = [];   // [{task_id, moment_index, title, start, end}]
+let batchPollInterval = null;
+let ctrlVideoUrl      = '';   // URL yang digunakan saat scan terakhir
+
+// ── DOM refs ─────────────────────────────────────────────────
+const controversialToggle  = $('controversial-toggle');
+const controversialBody    = $('controversial-body');
+const controversialChevron = $('controversial-chevron');
+const ctrlUrlInput         = $('ctrl-url');
+const ctrlNumMoments       = $('ctrl-num-moments');
+const ctrlApiKey           = $('ctrl-api-key');
+const ctrlVideoFormat      = $('ctrl-video-format');
+const ctrlCookiesToggle    = $('ctrl-cookies-toggle');
+const ctrlSubtitleToggle   = $('ctrl-subtitle-toggle');
+const btnScan              = $('btn-scan');
+const scanSpinner          = $('scan-spinner');
+const scanBtnLabel         = $('scan-btn-label');
+const scanStatus           = $('scan-status');
+const momentsResult        = $('moments-result');
+const momentsResultTitle   = $('moments-result-title');
+const transcriptBadge      = $('transcript-badge');
+const btnSelectAll         = $('btn-select-all');
+const momentCardsList      = $('moment-cards-list');
+const btnClipMoments       = $('btn-clip-moments');
+const clipMomentsSpinner   = $('clip-moments-spinner');
+const clipMomentsLabel     = $('clip-moments-label');
+const batchProgressArea    = $('batch-progress-area');
+const batchTasksList       = $('batch-tasks-list');
+const btnBatchNew          = $('btn-batch-new');
+const batchDownloadGallery = $('batch-download-gallery');
+const batchClipsGrid       = $('batch-clips-grid');
+const btnBatchReset        = $('btn-batch-reset');
+
+// ── Load saved API key ────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const savedKey = localStorage.getItem('clipper_gemini_key');
+  if (savedKey && ctrlApiKey) ctrlApiKey.value = savedKey;
+});
+
+// ── Collapsible Toggle ────────────────────────────────────────
+if (controversialToggle) {
+  controversialToggle.addEventListener('click', () => {
+    const isOpen = controversialBody.classList.toggle('open');
+    controversialChevron.classList.toggle('open', isOpen);
+  });
+}
+
+// ── Scan Button ───────────────────────────────────────────────
+if (btnScan) {
+  btnScan.addEventListener('click', async () => {
+    const url       = ctrlUrlInput ? ctrlUrlInput.value.trim() : '';
+    const apiKey    = ctrlApiKey  ? ctrlApiKey.value.trim()   : '';
+    const numMoments = ctrlNumMoments ? parseInt(ctrlNumMoments.value) : 4;
+    const cookies    = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
+
+    if (!url)    { alert('URL video wajib diisi!'); ctrlUrlInput.focus(); return; }
+    if (!apiKey) { alert('Groq API Key wajib diisi!'); ctrlApiKey.focus(); return; }
+
+    // Save API key
+    localStorage.setItem('clipper_gemini_key', apiKey);
+    // Sync to main AI copywriter input too
+    if (geminiKeyInput) geminiKeyInput.value = apiKey;
+
+    ctrlVideoUrl = url;
+
+    // Reset previous results
+    detectedMoments = [];
+    selectedMoments.clear();
+    momentsResult.style.display        = 'none';
+    batchProgressArea.style.display    = 'none';
+    batchDownloadGallery.style.display = 'none';
+    momentCardsList.innerHTML          = '';
+    batchTasksList.innerHTML           = '';
+    batchClipsGrid.innerHTML           = '';
+
+    // Loading state
+    setScanLoading(true);
+    showScanStatus('loading', '⏳ Menganalisis video dan mendeteksi momen kontroversial...');
+
+    try {
+      const res  = await fetch('/detect-moments', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ url, api_key: apiKey, num_moments: numMoments, cookies }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        showScanStatus('error', '❌ ' + (data.error || 'Terjadi kesalahan.'));
+        return;
+      }
+
+      detectedMoments = data.moments || [];
+      if (detectedMoments.length === 0) {
+        showScanStatus('error', '❌ AI tidak dapat menemukan momen. Coba lagi.');
+        return;
+      }
+
+      // Show transcript badge
+      if (data.has_transcript && transcriptBadge) {
+        transcriptBadge.style.display = 'inline-flex';
+      } else if (transcriptBadge) {
+        transcriptBadge.style.display = 'none';
+      }
+
+      // Update title
+      const vTitle = data.video_title ? `"${data.video_title.slice(0, 50)}…"` : '';
+      if (momentsResultTitle) {
+        momentsResultTitle.textContent = `${detectedMoments.length} Momen Ditemukan ${vTitle}`;
+      }
+
+      showScanStatus('success', `✅ ${detectedMoments.length} momen kontroversial berhasil dideteksi!`);
+
+      // Render moment cards
+      renderMomentCards(detectedMoments);
+      momentsResult.style.display = 'block';
+
+      // Auto-select all
+      detectedMoments.forEach(m => selectedMoments.add(m.index));
+      syncMomentSelection();
+
+    } catch (err) {
+      showScanStatus('error', '❌ Gagal menghubungi server: ' + err.message);
+    } finally {
+      setScanLoading(false);
+    }
+  });
+}
+
+// ── Render Moment Cards ───────────────────────────────────────
+function renderMomentCards(moments) {
+  momentCardsList.innerHTML = '';
+  moments.forEach(m => {
+    const card = document.createElement('div');
+    card.className = 'moment-card selected'; // all selected by default
+    card.dataset.index = m.index;
+
+    card.innerHTML = `
+      <div class="moment-card-check">✓</div>
+      <div class="moment-card-index">${m.index}</div>
+      <div class="moment-card-info">
+        <p class="moment-card-title">${escHtml(m.title)}</p>
+        <p class="moment-card-time">⏱ ${m.start} → ${m.end}</p>
+        <p class="moment-card-reason">${escHtml(m.reason)}</p>
+      </div>
+    `;
+
+    card.addEventListener('click', () => {
+      const idx = m.index;
+      if (selectedMoments.has(idx)) {
+        selectedMoments.delete(idx);
+        card.classList.remove('selected');
+      } else {
+        selectedMoments.add(idx);
+        card.classList.add('selected');
+      }
+      updateClipMomentsBtn();
+    });
+
+    momentCardsList.appendChild(card);
+  });
+  updateClipMomentsBtn();
+}
+
+function syncMomentSelection() {
+  document.querySelectorAll('.moment-card').forEach(card => {
+    const idx = parseInt(card.dataset.index);
+    card.classList.toggle('selected', selectedMoments.has(idx));
+  });
+  updateClipMomentsBtn();
+}
+
+function updateClipMomentsBtn() {
+  const count = selectedMoments.size;
+  if (clipMomentsLabel) {
+    clipMomentsLabel.textContent = count > 0
+      ? `✂️  Potong ${count} Momen Terpilih`
+      : '✂️  Pilih minimal 1 momen';
+  }
+  if (btnClipMoments) btnClipMoments.disabled = count === 0;
+}
+
+// ── Select All Button ─────────────────────────────────────────
+if (btnSelectAll) {
+  btnSelectAll.addEventListener('click', () => {
+    const allSelected = selectedMoments.size === detectedMoments.length;
+    if (allSelected) {
+      selectedMoments.clear();
+      btnSelectAll.textContent = '☑ Pilih Semua';
+    } else {
+      detectedMoments.forEach(m => selectedMoments.add(m.index));
+      btnSelectAll.textContent = '☐ Batal Pilih';
+    }
+    syncMomentSelection();
+  });
+}
+
+// ── Clip Moments Button ───────────────────────────────────────
+if (btnClipMoments) {
+  btnClipMoments.addEventListener('click', async () => {
+    if (selectedMoments.size === 0) return;
+
+    const chosenMoments = detectedMoments.filter(m => selectedMoments.has(m.index));
+    const apiKey = ctrlApiKey ? ctrlApiKey.value.trim() : '';
+    const videoFormat     = ctrlVideoFormat ? ctrlVideoFormat.value : 'original';
+    const cookies         = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
+    const subtitleEnabled = ctrlSubtitleToggle ? ctrlSubtitleToggle.checked : false;
+    const hookFontsize    = $('ctrl-hook-fontsize') ? $('ctrl-hook-fontsize').value : '34';
+    const hookStyle       = $('ctrl-hook-style') ? $('ctrl-hook-style').value : 'yellow-pop';
+
+    // Loading state
+    btnClipMoments.disabled = true;
+    btnClipMoments.classList.add('loading');
+
+    try {
+      const res = await fetch('/clip-moments', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          url:              ctrlVideoUrl,
+          moments:          chosenMoments,
+          video_format:     videoFormat,
+          cookies:          cookies,
+          subtitle_enabled: subtitleEnabled,
+          subtitle_lang:    'id,en',
+          subtitle_type:    'soft',
+          subtitle_auto:    true,
+          hook_fontsize:    hookFontsize,
+          hook_preset:      hookStyle,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        alert('Error: ' + (data.error || 'Terjadi kesalahan.'));
+        btnClipMoments.disabled = false;
+        btnClipMoments.classList.remove('loading');
+        return;
+      }
+
+      batchTaskList = data.tasks || [];
+
+      // Show batch progress UI
+      momentsResult.style.display    = 'none';
+      scanStatus.style.display       = 'none';
+      batchProgressArea.style.display = 'block';
+      batchDownloadGallery.style.display = 'none';
+
+      // Render batch task items
+      renderBatchTasks(batchTaskList);
+
+      // Start polling
+      startBatchPolling();
+
+    } catch (err) {
+      alert('Gagal menghubungi server: ' + err.message);
+      btnClipMoments.disabled = false;
+      btnClipMoments.classList.remove('loading');
+    }
+  });
+}
+
+// ── Render Batch Task UI ──────────────────────────────────────
+function renderBatchTasks(tasks) {
+  batchTasksList.innerHTML = '';
+  tasks.forEach(t => {
+    const item = document.createElement('div');
+    item.className = 'batch-task-item';
+    item.id = `batch-task-${t.task_id}`;
+    item.innerHTML = `
+      <div class="batch-task-header">
+        <span class="batch-task-name">🎬 ${escHtml(t.title || `Momen ${t.moment_index}`)}</span>
+        <span class="batch-task-time">${t.start} → ${t.end}</span>
+        <span class="batch-task-pct" id="pct-${t.task_id}">0%</span>
+      </div>
+      <div class="batch-task-track">
+        <div class="batch-task-fill" id="fill-${t.task_id}" style="width:0%"></div>
+      </div>
+    `;
+    batchTasksList.appendChild(item);
+  });
+}
+
+// ── Batch Progress Polling ────────────────────────────────────
+function startBatchPolling() {
+  if (batchPollInterval) clearInterval(batchPollInterval);
+
+  batchPollInterval = setInterval(async () => {
+    const taskIds = batchTaskList.map(t => t.task_id);
+    try {
+      const res  = await fetch('/batch-progress', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ task_ids: taskIds }),
+      });
+      const data = await res.json();
+      const tasks = data.tasks || {};
+
+      let allDone = true;
+      let anyError = false;
+
+      batchTaskList.forEach(t => {
+        const st = tasks[t.task_id];
+        if (!st) return;
+
+        const pct      = st.progress || 0;
+        const status   = st.status;
+        const itemEl   = $(`batch-task-${t.task_id}`);
+        const fillEl   = $(`fill-${t.task_id}`);
+        const pctEl    = $(`pct-${t.task_id}`);
+
+        if (fillEl)  fillEl.style.width = pct + '%';
+        if (pctEl)   pctEl.textContent  = pct + '%';
+        if (itemEl) {
+          itemEl.classList.toggle('done',  status === 'done');
+          itemEl.classList.toggle('error', status === 'error');
+        }
+
+        if (status !== 'done' && status !== 'error') allDone = false;
+        if (status === 'error') anyError = true;
+
+        // Store file info back into task
+        if (st.file) t.output_file = st.file;
+        if (st.error) t.error_msg  = st.error;
+      });
+
+      // All finished
+      if (allDone) {
+        clearInterval(batchPollInterval);
+        batchPollInterval = null;
+
+        setTimeout(() => {
+          batchProgressArea.style.display    = 'none';
+          batchDownloadGallery.style.display = 'block';
+          renderBatchGallery(batchTaskList);
+        }, 800);
+      }
+
+    } catch (e) {
+      // Silently ignore polling errors (server may be busy)
+    }
+  }, 800);
+}
+
+// ── Render Download Gallery ───────────────────────────────────
+function renderBatchGallery(tasks) {
+  batchClipsGrid.innerHTML = '';
+  const successTasks = tasks.filter(t => t.output_file);
+
+  if (successTasks.length === 0) {
+    batchClipsGrid.innerHTML = '<p style="color:var(--accent-danger); font-size:.88rem;">Semua klip gagal diproses.</p>';
+    return;
+  }
+
+  successTasks.forEach(t => {
+    const fileUrl = `/download/${t.output_file}`;
+    const card = document.createElement('div');
+    card.className = 'batch-clip-card';
+    card.innerHTML = `
+      <video class="batch-clip-video" src="${fileUrl}" preload="metadata" muted></video>
+      <div class="batch-clip-info">
+        <p class="batch-clip-title">${escHtml(t.title || `Momen ${t.moment_index}`)}</p>
+        <p class="batch-clip-time">⏱ ${t.start} → ${t.end}</p>
+        <a href="${fileUrl}" download class="batch-clip-download">⬇️ Download</a>
+      </div>
+    `;
+    batchClipsGrid.appendChild(card);
+  });
+}
+
+// ── Reset Buttons ─────────────────────────────────────────────
+function resetControversialUI() {
+  if (batchPollInterval) { clearInterval(batchPollInterval); batchPollInterval = null; }
+  batchTaskList   = [];
+  detectedMoments = [];
+  selectedMoments.clear();
+  if (momentCardsList)       momentCardsList.innerHTML       = '';
+  if (batchTasksList)        batchTasksList.innerHTML        = '';
+  if (batchClipsGrid)        batchClipsGrid.innerHTML        = '';
+  if (momentsResult)         momentsResult.style.display         = 'none';
+  if (batchProgressArea)     batchProgressArea.style.display     = 'none';
+  if (batchDownloadGallery)  batchDownloadGallery.style.display  = 'none';
+  if (scanStatus)            scanStatus.style.display            = 'none';
+  if (ctrlUrlInput)          ctrlUrlInput.value  = '';
+  if (btnClipMoments)        btnClipMoments.classList.remove('loading');
+  if (btnClipMoments)        btnClipMoments.disabled = false;
+}
+
+if (btnBatchNew)   btnBatchNew.addEventListener('click',   resetControversialUI);
+if (btnBatchReset) btnBatchReset.addEventListener('click', resetControversialUI);
+
+// ── Helpers ───────────────────────────────────────────────────
+function setScanLoading(loading) {
+  if (!btnScan) return;
+  btnScan.disabled = loading;
+  btnScan.classList.toggle('loading', loading);
+}
+
+function showScanStatus(type, message) {
+  if (!scanStatus) return;
+  scanStatus.className = `scan-status ${type}`;
+  scanStatus.textContent = message;
+  scanStatus.style.display = 'block';
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+
+// ── Cookies Upload Logic ──────────────────────────────────────────────────
+async function handleCookiesUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/upload-cookies', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.message);
+      checkCookiesStatus();
+    } else {
+      alert(data.error);
+    }
+  } catch (err) {
+    alert("Gagal mengunggah cookies: " + err.message);
+  }
+}
+const manualCookiesFile = $('manual-cookies-file');
+if (manualCookiesFile) manualCookiesFile.addEventListener('change', handleCookiesUpload);
+const ctrlCookiesFile = $('ctrl-cookies-file');
+if (ctrlCookiesFile) ctrlCookiesFile.addEventListener('change', handleCookiesUpload);
+
+async function checkCookiesStatus() {
+  try {
+    const res = await fetch('/cookies-status');
+    const data = await res.json();
+    document.querySelectorAll('.cookies-status-text').forEach(el => {
+      el.textContent = data.exists ? "✅ cookies.txt tersedia di server." : "❌ cookies.txt belum diupload.";
+    });
+    if (data.exists) {
+      if ($('manual-cookies-toggle')) $('manual-cookies-toggle').checked = true;
+      if ($('ctrl-cookies-toggle')) $('ctrl-cookies-toggle').checked = true;
+    }
+  } catch (err) {}
+}
+window.addEventListener('DOMContentLoaded', checkCookiesStatus);

@@ -29,6 +29,12 @@ def get_task(task_id: str) -> dict | None:
         return _tasks.get(task_id)
 
 
+def get_tasks_batch(task_ids: list) -> dict:
+    """Return a dict of {task_id: task_data} for all given task IDs."""
+    with _lock:
+        return {tid: _tasks.get(tid) for tid in task_ids if tid in _tasks}
+
+
 def _update_task(task_id: str, **kwargs):
     with _lock:
         if task_id in _tasks:
@@ -193,6 +199,7 @@ def run_clip(
     hook_title: str = "",
     hook_fontsize: str = "34",
     hook_preset: str = "yellow-pop",
+    cookies: str = "",
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
@@ -219,7 +226,11 @@ def run_clip(
             "--no-playlist",
             "--progress",
             "--newline",
+            "--extractor-args", "youtube:player_client=android,web",
         ]
+
+        if cookies:
+            yt_dlp_cmd += ["--cookies", cookies]
 
         if subtitle_enabled:
             first_lang = subtitle_lang.split(",")[0].strip()
@@ -533,8 +544,10 @@ def start_clip_thread(
     hook_title: str = "",
     hook_fontsize: str = "34",
     hook_preset: str = "yellow-pop",
+    cookies: str = "",
 ):
-    """Kick off the clip pipeline in a daemon thread."""
+    """
+    Menjalankan proses pemotongan di thread terpisah."""
     t = threading.Thread(
         target=run_clip,
         args=(task_id, url, start, end, output_dir,
@@ -543,7 +556,7 @@ def start_clip_thread(
               sub_bold, sub_italic, sub_underline, video_format,
               sub_primary_color, sub_outline_color, sub_back_color,
               sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
-              hook_title, hook_fontsize, hook_preset),
+              hook_title, hook_fontsize, hook_preset, cookies),
         daemon=True,
     )
     t.start()

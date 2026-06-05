@@ -40,10 +40,162 @@
     </div>
   </header>
 
-  <!-- ── Main Form Card ── -->
+  <!-- ── Auto-Clip + Main Forms ── -->
   <main>
+
+    <!-- Controversial Moments Card -->
+    <div class="card controversial-card" id="controversial-card">
+      <!-- Header / Toggle -->
+      <div class="controversial-header" id="controversial-toggle">
+        <div class="controversial-title-row">
+          <div class="controversial-icon-wrap">🔥</div>
+          <div>
+            <p class="controversial-label">Auto-Clip Momen Kontroversial</p>
+            <p class="controversial-sublabel">Scan video dengan AI — deteksi &amp; potong momen paling menarik secara otomatis</p>
+          </div>
+        </div>
+        <div class="controversial-badge-row">
+          <span class="badge-ai">✨ AI Powered</span>
+          <span class="controversial-chevron" id="controversial-chevron">▼</span>
+        </div>
+      </div>
+
+      <!-- Collapsible Body -->
+      <div class="controversial-body" id="controversial-body">
+        <div class="controversial-divider"></div>
+
+        <!-- Inputs Row -->
+        <div class="controversial-inputs">
+          <!-- URL Input -->
+          <div class="field" style="flex: 2; min-width: 220px;">
+            <label for="ctrl-url">URL Video <span>*</span></label>
+            <div class="input-wrap">
+              <span class="input-icon">🔗</span>
+              <input id="ctrl-url" type="text" class="url-input" placeholder="https://www.youtube.com/watch?v=..." />
+            </div>
+          </div>
+
+          <!-- Jumlah Momen -->
+          <div class="field" style="flex: 0 0 140px; min-width: 120px;">
+            <label for="ctrl-num-moments">Jumlah Momen</label>
+            <div class="input-wrap select-wrap">
+              <span class="input-icon">🎯</span>
+              <select id="ctrl-num-moments">
+                <option value="1">1 Momen</option>
+                <option value="2">2 Momen</option>
+                <option value="3">3 Momen</option>
+                <option value="4" selected>4 Momen</option>
+                <option value="5">5 Momen</option>
+                <option value="6">6 Momen</option>
+                <option value="8">8 Momen</option>
+                <option value="10">10 Momen</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Groq API Key -->
+          <div class="field" style="flex: 1; min-width: 180px;">
+            <label for="ctrl-api-key">Groq API Key <span>*</span></label>
+            <div class="input-wrap">
+              <span class="input-icon">🔑</span>
+              <input id="ctrl-api-key" type="password" placeholder="gsk_..." />
+            </div>
+          </div>
+        </div>
+
+        <!-- Format & Subtitle Options -->
+        <div class="controversial-options-row">
+          <div class="field" style="flex: 1; min-width: 160px;">
+            <label for="ctrl-video-format">Format Output</label>
+            <div class="input-wrap select-wrap">
+              <span class="input-icon">📱</span>
+              <select id="ctrl-video-format">
+                <option value="original">Original</option>
+                <option value="vertical-crop">Vertical 9:16 (Crop)</option>
+                <option value="vertical-pad">Vertical 9:16 (Pad)</option>
+              </select>
+            </div>
+          </div>
+          <label class="checkbox-row" for="ctrl-subtitle-toggle" style="flex-shrink: 0; margin-top: 26px;">
+            <input type="checkbox" id="ctrl-subtitle-toggle" />
+            <span class="checkbox-box"></span>
+            <span class="checkbox-label">Aktifkan Subtitle Otomatis</span>
+          </label>
+        </div>
+
+        <div class="controversial-options-row" style="margin-top: 15px;">
+          <div class="field" style="flex: 1; min-width: 120px;">
+            <label for="ctrl-hook-fontsize">Ukuran Font Judul</label>
+            <div class="input-wrap">
+              <input type="number" id="ctrl-hook-fontsize" value="34" min="20" max="80" style="padding: 8px 12px; font-size: 0.9rem;" />
+            </div>
+          </div>
+          <div class="field" style="flex: 2; min-width: 160px;">
+            <label for="ctrl-hook-style">Style Judul</label>
+            <div class="input-wrap select-wrap">
+              <span class="input-icon">🎨</span>
+              <select id="ctrl-hook-style" style="padding: 8px 12px; font-size: 0.9rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
+                <option value="yellow-pop">Yellow Pop (Kuning Outline Hitam)</option>
+                <option value="tiktok">TikTok Red (Merah Outline Putih)</option>
+                <option value="white-box">White Box (Teks Putih Kotak Hitam)</option>
+                <option value="neon">Neon Glow (Cyan Bersinar)</option>
+                <option value="classic">Classic White (Putih Biasa)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scan Button -->
+        <button type="button" id="btn-scan" class="btn-scan">
+          <div class="spinner" id="scan-spinner"></div>
+          <span id="scan-btn-label">🔍&nbsp; Scan &amp; Deteksi Momen</span>
+        </button>
+
+        <!-- Scan Status -->
+        <div id="scan-status" class="scan-status" style="display:none;"></div>
+
+        <!-- Results Area -->
+        <div id="moments-result" class="moments-result" style="display:none;">
+          <div class="moments-result-header">
+            <p class="moments-result-title" id="moments-result-title">Momen Terdeteksi</p>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="transcript-badge" id="transcript-badge" style="display:none;">📝 Dengan Transcript</span>
+              <button type="button" id="btn-select-all" class="btn-select-all">☑ Pilih Semua</button>
+            </div>
+          </div>
+          <!-- Moment Cards List -->
+          <div id="moment-cards-list" class="moment-cards-list"></div>
+
+          <!-- Clip Selected Button -->
+          <button type="button" id="btn-clip-moments" class="btn-clip-moments">
+            <div class="spinner" id="clip-moments-spinner"></div>
+            <span id="clip-moments-label">✂️&nbsp; Potong Momen Terpilih</span>
+          </button>
+        </div>
+
+        <!-- Batch Progress Area -->
+        <div id="batch-progress-area" class="batch-progress-area" style="display:none;">
+          <p class="batch-progress-title">📡 Progress Pemotongan Batch</p>
+          <div id="batch-tasks-list" class="batch-tasks-list"></div>
+          <button type="button" id="btn-batch-new" class="btn-new" style="margin-top:16px; width:100%; justify-content:center;">+ Scan Video Baru</button>
+        </div>
+
+        <!-- Batch Download Gallery -->
+        <div id="batch-download-gallery" class="batch-download-gallery" style="display:none;">
+          <div class="batch-gallery-header">
+            <span style="font-size:2rem;">🎉</span>
+            <p class="batch-gallery-title">Semua Klip Berhasil Dipotong!</p>
+          </div>
+          <div id="batch-clips-grid" class="batch-clips-grid"></div>
+          <button type="button" id="btn-batch-reset" class="btn-new" style="margin-top:16px; width:100%; justify-content:center;">+ Scan Video Baru</button>
+        </div>
+
+      </div><!-- /controversial-body -->
+    </div><!-- /controversial-card -->
+
+    <!-- ── Main Form Card (Manual Clip — tidak berubah) ── -->
     <div class="card">
-      <p class="card-title">🎬 Input Video</p>
+      <p class="card-title">✂️ Potong Video Manual</p>
       <form id="clip-form" autocomplete="off" novalidate>
         <div class="field-group">
 
@@ -97,17 +249,19 @@
           </div>
 
           <!-- Output Format Section -->
-          <div class="field" style="margin-bottom: 18px;">
-            <label for="video-format">Format Video <span>*</span></label>
-            <div class="input-wrap select-wrap">
-              <span class="input-icon">📱</span>
-              <select id="video-format">
-                <option value="original">Original (Tanpa Ubah Rasio)</option>
-                <option value="vertical-crop">Vertical 9:16 (Crop Tengah — TikTok/Reels)</option>
-                <option value="vertical-pad">Vertical 9:16 (Pad Bar Hitam Atas/Bawah)</option>
-              </select>
+          <div class="time-row" style="margin-bottom: 18px;">
+            <div class="field" style="flex: 2;">
+              <label for="video-format">Format Video <span>*</span></label>
+              <div class="input-wrap select-wrap">
+                <span class="input-icon">📱</span>
+                <select id="video-format">
+                  <option value="original">Original (Tanpa Ubah Rasio)</option>
+                  <option value="vertical-crop">Vertical 9:16 (Crop Tengah — TikTok/Reels)</option>
+                  <option value="vertical-pad">Vertical 9:16 (Pad Bar Hitam Atas/Bawah)</option>
+                </select>
+              </div>
+              <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
             </div>
-            <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
           </div>
 
           <!-- Hook Title Section -->

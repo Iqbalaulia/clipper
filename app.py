@@ -21,6 +21,7 @@ import clipper
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
+COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max request
@@ -31,6 +32,28 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max request
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/cookies-status")
+def cookies_status():
+    exists = os.path.isfile(COOKIES_FILE)
+    return jsonify({"exists": exists})
+
+
+@app.route("/upload-cookies", methods=["POST"])
+def upload_cookies():
+    if "file" not in request.files:
+        return jsonify({"error": "Tidak ada file yang diunggah."}), 400
+    
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "Nama file kosong."}), 400
+    
+    try:
+        file.save(COOKIES_FILE)
+        return jsonify({"success": True, "message": "File cookies.txt berhasil diunggah."})
+    except Exception as e:
+        return jsonify({"error": f"Gagal menyimpan file: {str(e)}"}), 500
 
 
 @app.route("/check-deps")
@@ -107,6 +130,9 @@ def clip():
     hook_title        = (data.get("hook_title") or "").strip()
     hook_fontsize     = str(data.get("hook_fontsize") or "34").strip()
     hook_preset       = (data.get("hook_preset") or "yellow-pop").strip()
+    
+    use_cookies = bool(data.get("cookies", False))
+    cookies_file = COOKIES_FILE if (use_cookies and os.path.isfile(COOKIES_FILE)) else ""
 
     task_id = clipper.create_task()
 
@@ -137,6 +163,7 @@ def clip():
         hook_title=hook_title,
         hook_fontsize=hook_fontsize,
         hook_preset=hook_preset,
+        cookies=cookies_file,
     )
 
     return jsonify({"task_id": task_id})
@@ -204,6 +231,9 @@ def generate_hook():
     try:
         # 1. Ekstrak metadata video dengan yt-dlp
         cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+        use_cookies = bool(data.get("cookies", False))
+        if use_cookies and os.path.isfile(COOKIES_FILE):
+            cmd += ["--cookies", COOKIES_FILE]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(r.stdout)
         
@@ -277,6 +307,9 @@ def generate_copy():
     try:
         # 1. Ekstrak metadata video dengan yt-dlp
         cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+        use_cookies = bool(data.get("cookies", False))
+        if use_cookies and os.path.isfile(COOKIES_FILE):
+            cmd += ["--cookies", COOKIES_FILE]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(r.stdout)
         
@@ -336,6 +369,151 @@ Format output yang diinginkan:
         return jsonify({"error": "Gagal mengambil informasi video. Pastikan URL valid."}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# ── Detect Controversial Moments ────────────────────────────────────────────
+
+@app.route("/detect-moments", methods=["POST"])
+def detect_moments():
+    data = request.get_json(force=True)
+    url = (data.get("url") or "").strip()
+    api_key = (data.get("api_key") or "").strip()
+    num_moments = int(data.get("num_moments") or 4)
+    use_cookies = bool(data.get("cookies", False))
+
+    if not url: return jsonify({"error": "URL video wajib diisi."}), 400
+    if not api_key: return jsonify({"error": "Groq API Key wajib diisi."}), 400
+
+    try:
+        cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+        if use_cookies and os.path.isfile(COOKIES_FILE):
+            cmd += ["--cookies", COOKIES_FILE]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if r.returncode != 0:
+            return jsonify({"error": f"Gagal mengambil info video: {r.stderr[:300]}"}), 400
+
+        info = json.loads(r.stdout)
+        title = info.get("title", "Video tanpa judul")
+        
+        # Download subtitle
+        transcript_text = ""
+        sub_cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--write-auto-sub", "--write-sub",
+            "--sub-lang", "id,en", "--convert-subs", "srt",
+            "--skip-download",
+            "--output", os.path.join(OUTPUT_DIR, "_scan_%(id)s.%(ext)s"),
+            "--no-playlist", url
+        ]
+        if use_cookies and os.path.isfile(COOKIES_FILE):
+            sub_cmd.insert(-1, "--cookies")
+            sub_cmd.insert(-1, COOKIES_FILE)
+        subprocess.run(sub_cmd, capture_output=True, text=True, timeout=60)
+        
+        video_id = info.get("id", "unknown")
+        for f in os.listdir(OUTPUT_DIR):
+            if f.startswith(f"_scan_{video_id}") and f.endswith(".srt"):
+                try:
+                    with open(os.path.join(OUTPUT_DIR, f), "r", encoding="utf-8") as srt_f:
+                        transcript_text += srt_f.read()
+                except:
+                    pass
+
+        prompt = f'''Kamu adalah AI Video Editor. Cari {num_moments} momen paling menarik/kontroversial dari video ini.
+Judul: {title}
+Subtitle/Transcript:
+{transcript_text[:10000]}
+
+PENTING: Hapus kata "Momen" dari judul, dan buat judul tersebut memiliki hooks maksimal (clickbait positif yang sangat memancing rasa penasaran, maksimal 3-5 kata). Output HARUS berupa JSON murni dengan format:
+[
+  {{"index": 1, "start": "00:01:00", "end": "00:01:30", "title": "Fakta Mengejutkan!", "description": "Deskripsi singkat"}}, ...
+]'''
+        groq_url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"}
+        }
+        
+        # Since we use json_object, let's adjust prompt to demand an object
+        prompt += "\nBerikan dalam bentuk JSON object dengan key 'moments' berisi array tersebut."
+        payload["messages"][0]["content"] = prompt
+        
+        r_ai = requests.post(groq_url, headers=headers, json=payload, timeout=60)
+        r_ai.raise_for_status()
+        rd = r_ai.json()
+        content_ai = rd["choices"][0]["message"]["content"]
+        moments = json.loads(content_ai).get("moments", [])
+        
+        return jsonify({
+            "moments": moments,
+            "title": title,
+            "has_transcript": bool(transcript_text)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/clip-moments", methods=["POST"])
+def clip_moments():
+    data = request.get_json(force=True)
+    url = (data.get("url") or "").strip()
+    moments = data.get("moments") or []
+    use_cookies = bool(data.get("cookies", False))
+    cookies_file = COOKIES_FILE if (use_cookies and os.path.isfile(COOKIES_FILE)) else ""
+
+    if not url or not moments:
+        return jsonify({"error": "URL dan momen wajib diisi."}), 400
+
+    task_list = []
+    for moment in moments:
+        start = str(moment.get("start", "00:00:00"))
+        end   = str(moment.get("end",   "00:01:00"))
+        title = str(moment.get("title", ""))
+        
+        task_id = clipper.create_task()
+        clipper.start_clip_thread(
+            task_id=task_id,
+            url=url,
+            start=start,
+            end=end,
+            output_dir=OUTPUT_DIR,
+            video_format=data.get("video_format", "original"),
+            subtitle_enabled=data.get("subtitle_enabled", False),
+            hook_title=title,
+            hook_fontsize=str(data.get("hook_fontsize", "34")),
+            hook_preset=data.get("hook_preset", "yellow-pop"),
+            cookies=cookies_file,
+        )
+        task_list.append({
+            "task_id": task_id,
+            "moment_index": moment.get("index", 0),
+            "title": title,
+            "start": start,
+            "end": end
+        })
+    return jsonify({"tasks": task_list})
+
+
+@app.route("/batch-progress", methods=["POST"])
+def batch_progress():
+    data = request.get_json(force=True)
+    task_ids = data.get("task_ids") or []
+    
+    result = {}
+    for tid in task_ids:
+        t = clipper.get_task(tid)
+        if t:
+            result[tid] = {
+                "status": t["status"],
+                "progress": t["progress"],
+                "file": t["output_file"],
+                "error": t["error"],
+            }
+    return jsonify({"tasks": result})
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
