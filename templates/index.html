@@ -123,6 +123,54 @@
           </label>
         </div>
 
+        <!-- ── Subtitle Style Options (tampil saat subtitle diaktifkan) ── -->
+        <div id="ctrl-subtitle-options" style="display:none; margin: 4px 0 16px; padding: 16px; background: rgba(0,0,0,0.25); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+          <p class="position-label" style="margin-bottom: 12px; font-size: 0.85rem;">🎨 Kustomisasi Subtitle</p>
+
+          <!-- Font Size / Case / Position -->
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; align-items: flex-end;">
+            <div style="flex: 0 0 110px;">
+              <label for="ctrl-sub-fontsize" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Ukuran Font</label>
+              <div class="input-wrap">
+                <input type="number" id="ctrl-sub-fontsize" value="22" min="10" max="80" style="padding: 7px 12px; font-size: 0.88rem;" />
+              </div>
+            </div>
+            <div style="flex: 1; min-width: 120px;">
+              <label for="ctrl-sub-case" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Huruf</label>
+              <div class="input-wrap select-wrap">
+                <select id="ctrl-sub-case" style="padding: 7px 12px; font-size: 0.88rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
+                  <option value="normal">Normal</option>
+                  <option value="upper" selected>UPPERCASE</option>
+                </select>
+              </div>
+            </div>
+            <div style="flex: 1; min-width: 120px;">
+              <label for="ctrl-sub-position" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Posisi</label>
+              <div class="input-wrap select-wrap">
+                <select id="ctrl-sub-position" style="padding: 7px 12px; font-size: 0.88rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
+                  <option value="bottom" selected>Bawah</option>
+                  <option value="center">Tengah</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Preset Style Cards -->
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">🎨 Preset Style</p>
+          <div class="preset-scroller">
+            <div class="preset-cards" id="ctrl-preset-cards"></div>
+          </div>
+
+          <!-- Hidden style params (diisi oleh JS saat preset dipilih) -->
+          <input type="hidden" id="ctrl-sub-primary-color" value="FFFFFF" />
+          <input type="hidden" id="ctrl-sub-outline-color" value="000000" />
+          <input type="hidden" id="ctrl-sub-back-color"    value="000000" />
+          <input type="hidden" id="ctrl-sub-back-alpha"    value="00" />
+          <input type="hidden" id="ctrl-sub-border-style"  value="1" />
+          <input type="hidden" id="ctrl-sub-outline-width" value="3" />
+          <input type="hidden" id="ctrl-sub-shadow-val"    value="2" />
+        </div>
+
         <div class="controversial-options-row" style="margin-top: 15px;">
           <div class="field" style="flex: 1; min-width: 120px;">
             <label for="ctrl-hook-fontsize">Ukuran Font Judul</label>

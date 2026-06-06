@@ -486,11 +486,9 @@ const SUBTITLE_PRESETS = [
   },
 ];
 
-function renderPresetCards() {
-  const container = $('preset-cards');
-  if (!container) return;
+// ── Shared helper: render preset cards into any container ────────
+function renderPresetsInto(container, applyFn) {
   container.innerHTML = '';
-
   SUBTITLE_PRESETS.forEach((preset, idx) => {
     const card = document.createElement('div');
     card.className = 'preset-card' + (idx === 0 ? ' active' : '');
@@ -500,7 +498,6 @@ function renderPresetCards() {
     const boxBg = p.bg !== 'transparent'
       ? `background:${p.bg}; padding:2px 5px; border-radius:3px;`
       : '';
-
     const nameLines = preset.name.split('\\n').join('<br>');
 
     card.innerHTML = `
@@ -511,29 +508,33 @@ function renderPresetCards() {
     `;
 
     card.addEventListener('click', () => {
-      document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
+      // Scope active-state removal to THIS container only
+      container.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
       card.classList.add('active');
-      applyPreset(preset);
+      applyFn(preset);
     });
 
     container.appendChild(card);
   });
 }
 
+function renderPresetCards() {
+  const manual = $('preset-cards');
+  if (manual) renderPresetsInto(manual, applyPreset);
+
+  const auto = $('ctrl-preset-cards');
+  if (auto) renderPresetsInto(auto, applyCtrlPreset);
+}
+
+// Apply preset to manual-clip controls
 function applyPreset(preset) {
-  if (!preset.params) return; // "Tanpa Preset" — don't change anything
+  if (!preset.params) return;
   const p = preset.params;
-
-  // Size + case
-  if (subFontsize)   subFontsize.value   = p.fontSize;
-  if (subCase)       subCase.value       = p.case;
-
-  // Checkboxes
-  if (subBold)       subBold.checked     = p.bold;
-  if (subItalic)     subItalic.checked   = p.italic;
+  if (subFontsize)   subFontsize.value    = p.fontSize;
+  if (subCase)       subCase.value        = p.case;
+  if (subBold)       subBold.checked      = p.bold;
+  if (subItalic)     subItalic.checked    = p.italic;
   if (subUnderline)  subUnderline.checked = p.underline;
-
-  // Hidden color/style params
   if (subPrimaryColor) subPrimaryColor.value = p.primaryColor;
   if (subOutlineColor) subOutlineColor.value = p.outlineColor;
   if (subBackColor)    subBackColor.value    = p.backColor;
@@ -541,6 +542,30 @@ function applyPreset(preset) {
   if (subBorderStyle)  subBorderStyle.value  = p.borderStyle;
   if (subOutlineWidth) subOutlineWidth.value = p.outlineWidth;
   if (subShadowVal)    subShadowVal.value    = p.shadow;
+}
+
+// Apply preset to auto-clip controls
+function applyCtrlPreset(preset) {
+  if (!preset.params) return;
+  const p = preset.params;
+  const ctrlFontsize     = $('ctrl-sub-fontsize');
+  const ctrlCase         = $('ctrl-sub-case');
+  const ctrlPrimary      = $('ctrl-sub-primary-color');
+  const ctrlOutline      = $('ctrl-sub-outline-color');
+  const ctrlBack         = $('ctrl-sub-back-color');
+  const ctrlBackAlpha    = $('ctrl-sub-back-alpha');
+  const ctrlBorderStyle  = $('ctrl-sub-border-style');
+  const ctrlOutlineWidth = $('ctrl-sub-outline-width');
+  const ctrlShadow       = $('ctrl-sub-shadow-val');
+  if (ctrlFontsize)     ctrlFontsize.value     = p.fontSize;
+  if (ctrlCase)         ctrlCase.value         = p.case;
+  if (ctrlPrimary)      ctrlPrimary.value      = p.primaryColor;
+  if (ctrlOutline)      ctrlOutline.value      = p.outlineColor;
+  if (ctrlBack)         ctrlBack.value         = p.backColor;
+  if (ctrlBackAlpha)    ctrlBackAlpha.value    = p.backAlpha;
+  if (ctrlBorderStyle)  ctrlBorderStyle.value  = p.borderStyle;
+  if (ctrlOutlineWidth) ctrlOutlineWidth.value = p.outlineWidth;
+  if (ctrlShadow)       ctrlShadow.value       = p.shadow;
 }
 
 
@@ -589,6 +614,14 @@ window.addEventListener('DOMContentLoaded', () => {
   const savedKey = localStorage.getItem('clipper_gemini_key');
   if (savedKey && ctrlApiKey) ctrlApiKey.value = savedKey;
 });
+
+// ── Subtitle options panel show/hide ──────────────────────────
+if (ctrlSubtitleToggle) {
+  ctrlSubtitleToggle.addEventListener('change', () => {
+    const panel = $('ctrl-subtitle-options');
+    if (panel) panel.style.display = ctrlSubtitleToggle.checked ? 'block' : 'none';
+  });
+}
 
 // ── Collapsible Toggle ────────────────────────────────────────
 if (controversialToggle) {
@@ -774,26 +807,26 @@ if (btnClipMoments) {
           moments:          chosenMoments,
           video_format:     videoFormat,
           cookies:          cookies,
-          subtitle_enabled: subtitleEnabled,
-          subtitle_lang:    'id,en',
-          subtitle_type:    'burn',
-          subtitle_auto:    true,
-          subtitle_position: 'bottom',
-          sub_fontsize:     '22',
-          sub_case:         'upper',
-          sub_bold:         true,
-          sub_italic:       false,
-          sub_underline:    false,
-          sub_primary_color: 'FFFFFF',
-          sub_outline_color: '000000',
-          sub_back_color:    '000000',
-          sub_back_alpha:    '00',
-          sub_border_style:  '1',
-          sub_outline_width: '3',
-          sub_shadow:        '2',
-          hook_fontsize:    hookFontsize,
-          hook_preset:      hookStyle,
-          hook_position:    'top',
+          subtitle_enabled:  subtitleEnabled,
+          subtitle_lang:     'id,en',
+          subtitle_type:     'burn',
+          subtitle_auto:     true,
+          subtitle_position: $('ctrl-sub-position')    ? $('ctrl-sub-position').value    : 'bottom',
+          sub_fontsize:      $('ctrl-sub-fontsize')    ? $('ctrl-sub-fontsize').value    : '22',
+          sub_case:          $('ctrl-sub-case')        ? $('ctrl-sub-case').value        : 'upper',
+          sub_bold:          false,
+          sub_italic:        false,
+          sub_underline:     false,
+          sub_primary_color: $('ctrl-sub-primary-color') ? $('ctrl-sub-primary-color').value : 'FFFFFF',
+          sub_outline_color: $('ctrl-sub-outline-color') ? $('ctrl-sub-outline-color').value : '000000',
+          sub_back_color:    $('ctrl-sub-back-color')    ? $('ctrl-sub-back-color').value    : '000000',
+          sub_back_alpha:    $('ctrl-sub-back-alpha')    ? $('ctrl-sub-back-alpha').value    : '00',
+          sub_border_style:  $('ctrl-sub-border-style')  ? $('ctrl-sub-border-style').value  : '1',
+          sub_outline_width: $('ctrl-sub-outline-width') ? $('ctrl-sub-outline-width').value : '3',
+          sub_shadow:        $('ctrl-sub-shadow-val')    ? $('ctrl-sub-shadow-val').value    : '2',
+          hook_fontsize:     hookFontsize,
+          hook_preset:       hookStyle,
+          hook_position:     $('ctrl-hook-position')   ? $('ctrl-hook-position').value   : 'top',
         }),
       });
       const data = await res.json();
