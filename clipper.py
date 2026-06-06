@@ -320,6 +320,9 @@ def run_clip(
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
                         "--skip-download",
+                        "--js-runtimes", "node:node.exe",
+                        "--remote-components", "ejs:github",
+                        "--no-check-certificates",
                         "--output", sub_dl_path,
                         "--no-playlist",
                     ]
@@ -356,6 +359,9 @@ def run_clip(
                     "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                     "--merge-output-format", "mp4",
                     "--output", cache_video_path,
+                    "--js-runtimes", "node:node.exe",
+                    "--remote-components", "ejs:github",
+                    "--no-check-certificates",
                     "--no-playlist",
                     "--progress",
                     "--newline",
@@ -419,6 +425,9 @@ def run_clip(
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
                         "--skip-download",
+                        "--js-runtimes", "node:node.exe",
+                        "--remote-components", "ejs:github",
+                        "--no-check-certificates",
                         "--output", sub_dl_path,
                         "--no-playlist",
                     ]
@@ -589,14 +598,18 @@ def run_clip(
                 if fast_seek_sec > 0:
                     ffmpeg_cmd.extend(["-ss", f"{fast_seek_sec:.3f}"])
                 ffmpeg_cmd.extend(["-i", downloaded_file])
+                # Explicit stream mapping: always pick first video + first audio
+                ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
                 if acc_seek_sec > 0:
                     ffmpeg_cmd.extend(["-ss", f"{acc_seek_sec:.3f}"])
                 ffmpeg_cmd.extend(["-t", duration_ff])
             else:
                 ffmpeg_cmd = ["ffmpeg", "-y", "-i", temp_cut_path]
+                ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
 
             if has_sub_file and subtitle_type == "soft":
                 ffmpeg_cmd.extend(["-i", shifted_sub_path])
+                ffmpeg_cmd.extend(["-map", "1:s:0"])  # Map subtitle from second input
 
             vf_filters = []
             if video_format == "vertical-crop":
@@ -674,7 +687,11 @@ def run_clip(
 
             ffmpeg_cmd.extend([
                 "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "copy",
+                "-pix_fmt", "yuv420p",          # Force 8-bit 4:2:0 — browser-compatible
+                "-profile:v", "high", "-level", "4.0",  # Max browser compat H.264 profile
+                "-c:a", "aac", "-b:a", "192k",  # Re-encode audio to AAC (avoids Opus/Vorbis in MP4)
+                "-movflags", "+faststart",      # Web-friendly: moov atom at start of file
+                "-shortest",                    # End at shortest stream to avoid empty frames
             ])
 
             if has_sub_file and subtitle_type == "soft":

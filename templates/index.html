@@ -263,6 +263,34 @@
       </div><!-- /controversial-body -->
     </div><!-- /controversial-card -->
 
+    <!-- ── Cookies Upload Card (Bypass Blokir) ── -->
+    <div class="card" id="cookies-card">
+      <div class="controversial-header">
+        <div class="controversial-title-row">
+          <div class="controversial-icon-wrap" style="background: rgba(255,165,0,0.2); color: #ffa500;">🍪</div>
+          <div>
+            <p class="controversial-label">Bypass Blokir YouTube (Cookies)</p>
+            <p class="controversial-sublabel">Upload cookies.txt jika YouTube memblokir akses (Bot Detection)</p>
+          </div>
+        </div>
+      </div>
+      <div class="controversial-body" style="display:block;">
+        <div class="controversial-divider"></div>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <input type="file" id="cookies-file-input" accept=".txt" style="display:none;" />
+          <button type="button" class="btn-new" onclick="document.getElementById('cookies-file-input').click()" style="padding: 10px 16px; min-width: 150px; justify-content: center;">
+            <span style="margin-right:8px;">📁</span> Pilih cookies.txt
+          </button>
+          <span id="cookies-file-name" style="font-size: 0.9rem; color: var(--text-muted);">Belum ada file dipilih</span>
+          <button type="button" id="btn-upload-cookies" class="btn-scan" style="padding: 10px 16px; margin-left: auto; max-width: 200px;">
+            <div class="spinner" id="cookies-spinner" style="display:none;"></div>
+            <span id="cookies-btn-label">⬆️ Upload</span>
+          </button>
+        </div>
+        <div id="cookies-status" style="margin-top: 12px; font-size: 0.85rem;"></div>
+      </div>
+    </div>
+
     <!-- ── Main Form Card (Manual Clip — tidak berubah) ── -->
     <div class="card">
       <p class="card-title">✂️ Potong Video Manual</p>

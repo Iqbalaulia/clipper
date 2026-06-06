@@ -1014,40 +1014,72 @@ function escHtml(str) {
 
 
 // ── Cookies Upload Logic ──────────────────────────────────────────────────
-async function handleCookiesUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const formData = new FormData();
-  formData.append('file', file);
-  try {
-    const res = await fetch('/upload-cookies', { method: 'POST', body: formData });
-    const data = await res.json();
-    if (res.ok) {
-      alert(data.message);
-      checkCookiesStatus();
+const cookiesFileInput = $('cookies-file-input');
+const cookiesFileName = $('cookies-file-name');
+const btnUploadCookies = $('btn-upload-cookies');
+const cookiesSpinner = $('cookies-spinner');
+const cookiesBtnLabel = $('cookies-btn-label');
+const cookiesStatus = $('cookies-status');
+
+if (cookiesFileInput) {
+  cookiesFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      cookiesFileName.textContent = file.name;
     } else {
-      alert(data.error);
+      cookiesFileName.textContent = "Belum ada file dipilih";
     }
-  } catch (err) {
-    alert("Gagal mengunggah cookies: " + err.message);
-  }
+  });
 }
-const manualCookiesFile = $('manual-cookies-file');
-if (manualCookiesFile) manualCookiesFile.addEventListener('change', handleCookiesUpload);
-const ctrlCookiesFile = $('ctrl-cookies-file');
-if (ctrlCookiesFile) ctrlCookiesFile.addEventListener('change', handleCookiesUpload);
+
+if (btnUploadCookies) {
+  btnUploadCookies.addEventListener('click', async () => {
+    const file = cookiesFileInput.files[0];
+    if (!file) {
+      alert("Silakan pilih file cookies.txt terlebih dahulu.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    btnUploadCookies.disabled = true;
+    cookiesSpinner.style.display = "inline-block";
+    cookiesBtnLabel.textContent = "Mengunggah...";
+
+    try {
+      const res = await fetch('/upload-cookies', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        cookiesStatus.innerHTML = `<span style="color:var(--text-main);">✅ Berhasil: ${data.message}</span>`;
+        checkCookiesStatus();
+      } else {
+        cookiesStatus.innerHTML = `<span style="color:var(--accent-red);">❌ Gagal: ${data.error}</span>`;
+      }
+    } catch (err) {
+      cookiesStatus.innerHTML = `<span style="color:var(--accent-red);">❌ Error: ${err.message}</span>`;
+    } finally {
+      btnUploadCookies.disabled = false;
+      cookiesSpinner.style.display = "none";
+      cookiesBtnLabel.textContent = "⬆️ Upload";
+      cookiesFileInput.value = "";
+      cookiesFileName.textContent = "Belum ada file dipilih";
+    }
+  });
+}
 
 async function checkCookiesStatus() {
   try {
     const res = await fetch('/cookies-status');
     const data = await res.json();
-    document.querySelectorAll('.cookies-status-text').forEach(el => {
-      el.textContent = data.exists ? "✅ cookies.txt tersedia di server." : "❌ cookies.txt belum diupload.";
-    });
-    if (data.exists) {
-      if ($('manual-cookies-toggle')) $('manual-cookies-toggle').checked = true;
-      if ($('ctrl-cookies-toggle')) $('ctrl-cookies-toggle').checked = true;
+    if (cookiesStatus) {
+      if (data.exists) {
+        cookiesStatus.innerHTML = `<span style="color:var(--text-main);">✅ Status: cookies.txt sudah tersedia di server. Anda siap memotong video!</span>`;
+      } else {
+        cookiesStatus.innerHTML = `<span style="color:var(--text-muted);">❌ Status: cookies.txt belum diupload. YouTube mungkin akan memblokir Anda.</span>`;
+      }
     }
   } catch (err) {}
 }
+
 window.addEventListener('DOMContentLoaded', checkCookiesStatus);

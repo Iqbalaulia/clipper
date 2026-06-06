@@ -388,15 +388,33 @@ def detect_moments():
 
     try:
         cmd = [
-            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", 
-            "--extractor-args", "youtube:player_client=android,web", url
+            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist",
+            "--js-runtimes", "node:node.exe",
+            "--remote-components", "ejs:github",
+            "--no-check-certificates",
         ]
         if use_cookies:
-            cmd.insert(-1, "--cookies")
-            cmd.insert(-1, COOKIES_FILE)
+            cmd += ["--cookies", COOKIES_FILE]
+        cmd.append(url)
+
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
-            return jsonify({"error": f"Gagal mengambil info video: {r.stderr[:300]}"}), 400
+            stderr_text = (r.stderr or "") + (r.stdout or "")
+            if "cookies are no longer valid" in stderr_text:
+                return jsonify({
+                    "error": "Cookies YouTube Anda sudah kadaluarsa (expired). Silakan ekspor ulang file cookies.txt terbaru dari browser dan upload kembali."
+                }), 400
+            elif "Sign in to confirm" in stderr_text or "bot" in stderr_text.lower():
+                cookie_hint = (
+                    " (cookies.txt sudah diupload tapi mungkin invalid/expired)"
+                    if use_cookies
+                    else " — Upload file cookies.txt terlebih dahulu di bagian 'Bypass Blokir'"
+                )
+                return jsonify({
+                    "error": f"YouTube memblokir akses karena mendeteksi bot{cookie_hint}. "
+                             "Gunakan ekstensi browser 'Get cookies.txt LOCALLY' untuk mengekspor cookies terbaru."
+                }), 400
+            return jsonify({"error": f"Gagal mengambil info video: {stderr_text[:400]}"}), 400
 
         info = json.loads(r.stdout)
         title = info.get("title", "Video tanpa judul")
@@ -408,12 +426,15 @@ def detect_moments():
             "--write-auto-sub", "--write-sub",
             "--sub-lang", subtitle_lang, "--convert-subs", "srt",
             "--skip-download",
+            "--js-runtimes", "node:node.exe",
+            "--remote-components", "ejs:github",
+            "--no-check-certificates",
             "--output", os.path.join(OUTPUT_DIR, "_scan_%(id)s.%(ext)s"),
-            "--no-playlist", url
+            "--no-playlist",
         ]
         if use_cookies:
-            sub_cmd.insert(-1, "--cookies")
-            sub_cmd.insert(-1, COOKIES_FILE)
+            sub_cmd += ["--cookies", COOKIES_FILE]
+        sub_cmd.append(url)
         subprocess.run(sub_cmd, capture_output=True, text=True, timeout=60)
         
         video_id = info.get("id", "unknown")
@@ -459,7 +480,16 @@ PENTING: Hapus kata "Momen" dari judul, dan buat judul tersebut memiliki hooks m
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        err_str = str(e)
+        if "Sign in to confirm" in err_str or "bot" in err_str.lower():
+            return jsonify({
+                "error": "YouTube memblokir akses (bot detection). Upload cookies.txt yang valid untuk melanjutkan."
+            }), 400
+        return jsonify({"error": err_str}), 500
+
+
+
+
 
 
 @app.route("/clip-moments", methods=["POST"])
