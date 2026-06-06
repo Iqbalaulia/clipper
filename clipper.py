@@ -323,12 +323,37 @@ def run_clip(
                         text=True, encoding="utf-8", errors="replace"
                     )
                     
+                    
                     potential_sub = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.srt")
+                    potential_sub_vtt = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.vtt")
+                    scan_sub_srt = os.path.join(output_dir, f"_scan_{video_id}.{first_lang}.srt")
+                    scan_sub_vtt = os.path.join(output_dir, f"_scan_{video_id}.{first_lang}.vtt")
+
                     if os.path.isfile(potential_sub):
                         has_sub_file = True
                         sub_file_path = potential_sub
+                    elif os.path.isfile(potential_sub_vtt):
+                        has_sub_file = True
+                        sub_file_path = potential_sub_vtt
+                    elif os.path.isfile(scan_sub_srt):
+                        has_sub_file = True
+                        sub_file_path = scan_sub_srt
+                        _append_log(task_id, "[>>] Menggunakan subtitle dari hasil Scan sebelumnya.")
+                    elif os.path.isfile(scan_sub_vtt):
+                        has_sub_file = True
+                        sub_file_path = scan_sub_vtt
+                        _append_log(task_id, "[>>] Menggunakan subtitle dari hasil Scan sebelumnya.")
                     else:
-                        _append_log(task_id, "⚠️ Gagal mengunduh subtitle (Mungkin limit HTTP 429). Klip akan dilanjutkan tanpa subtitle.")
+                        # Fallback try to find any matching subtitle in output_dir
+                        for f in os.listdir(output_dir):
+                            if (f.startswith(f"_cache_{video_id}") or f.startswith(f"_scan_{video_id}")) and (f.endswith(".srt") or f.endswith(".vtt")):
+                                has_sub_file = True
+                                sub_file_path = os.path.join(output_dir, f)
+                                _append_log(task_id, f"[>>] Ditemukan file subtitle alternatif: {f}")
+                                break
+                                
+                        if not has_sub_file:
+                            _append_log(task_id, "⚠️ Gagal mengunduh subtitle (Mungkin limit HTTP 429). Klip akan dilanjutkan tanpa subtitle.")
 
         _append_log(task_id, f"[>>] File video siap: {downloaded_file}")
 
