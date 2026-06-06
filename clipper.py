@@ -78,12 +78,13 @@ def _parse_seconds(ts: str) -> float:
 def _find_subtitle_file(output_dir: str, task_id: str, lang: str) -> str | None:
     """
     Find the downloaded subtitle file in output_dir.
-    yt-dlp names subtitles like: _tmp_<id>.<lang>.srt or _tmp_<id>.srt
+    Searches for files with prefixes: _tmp_<task_id>, _cache_*, _scan_*
     """
-    prefix = f"_tmp_{task_id}"
     candidates = []
     for f in os.listdir(output_dir):
-        if f.startswith(prefix) and f.endswith(".srt"):
+        fname = f.lower()
+        if (f.startswith(f"_tmp_{task_id}") or f.startswith("_cache_") or f.startswith("_scan_")) \
+                and (fname.endswith(".srt") or fname.endswith(".vtt")):
             candidates.append(os.path.join(output_dir, f))
     if not candidates:
         return None
@@ -91,24 +92,61 @@ def _find_subtitle_file(output_dir: str, task_id: str, lang: str) -> str | None:
     for c in candidates:
         if f".{lang}." in os.path.basename(c):
             return c
-    return candidates[0]
+    # Fallback: prefer .srt over .vtt
+    srt_candidates = [c for c in candidates if c.lower().endswith(".srt")]
+    return srt_candidates[0] if srt_candidates else candidates[0]
 
 
-def _shift_srt(input_path: str, offset_sec: float, output_path: str, text_case: str = "normal"):
+def _normalize_ts_to_srt(ts: str) -> str:
     """
-    Parse an SRT file, shift all timestamps back by `offset_sec`,
-    and drop any lines that fall before 00:00:00.000.
-    If text_case is "upper", convert subtitle text to uppercase.
+    Normalize a timestamp from VTT (HH:MM:SS.mmm or MM:SS.mmm) or
+    SRT (HH:MM:SS,mmm) format into SRT format (HH:MM:SS,mmm).
     """
-    def _srt_ts_to_ms(ts: str) -> int:
-        """HH:MM:SS,mmm -> milliseconds"""
-        h, m, rest = ts.split(":")
-        s, ms = rest.split(",")
-        return int(h) * 3600000 + int(m) * 60000 + int(s) * 1000 + int(ms)
+    ts = ts.strip()
+    # Replace dot separator with comma (VTT -> SRT)
+    ts = ts.replace(".", ",")
+    parts = ts.split(":")
+    if len(parts) == 2:
+        # MM:SS,mmm -> 00:MM:SS,mmm
+        ts = "00:" + ts
+    return ts
+
+
+def _strip_sub_tags(text: str) -> str:
+    """Remove HTML/VTT tags and cue settings from subtitle text lines."""
+    # Remove <c>, <b>, <i>, <u>, </c>, etc. and timestamp tags <00:01:02.345>
+    text = re.sub(r"<[^>]+>", "", text)
+    # Remove VTT positioning cues that appear after timestamp lines (align:start ...)
+    text = re.sub(r"\s*(align|position|line|size):[^\s]+", "", text)
+    return text.strip()
+
+
+def _shift_srt(
+    input_path: str,
+    offset_sec: float,
+    output_path: str,
+    text_case: str = "normal",
+):
+    """
+    Parse an SRT or VTT file, shift all timestamps back by `offset_sec`,
+    drop entries outside the clip window, strip HTML tags, and write
+    a clean SRT file.  Returns the number of subtitle entries written.
+    """
+
+    def _ts_to_ms(ts: str) -> int:
+        """HH:MM:SS,mmm or HH:MM:SS.mmm -> milliseconds"""
+        ts = ts.strip().replace(".", ",")
+        parts = ts.split(":")
+        if len(parts) == 2:          # MM:SS,mmm
+            parts = ["00"] + parts
+        h, m, rest = parts
+        sec_parts = rest.split(",")
+        s  = sec_parts[0]
+        ms = sec_parts[1] if len(sec_parts) > 1 else "0"
+        return int(h) * 3600000 + int(m) * 60000 + int(s) * 1000 + int(ms[:3].ljust(3, "0"))
 
     def _ms_to_srt_ts(ms: int) -> str:
-        if ms < 0:
-            ms = 0
+        ms = max(ms, 0)
         h  = ms // 3600000;  ms %= 3600000
         m  = ms // 60000;    ms %= 60000
         s  = ms // 1000;     ms %= 1000
@@ -116,20 +154,23 @@ def _shift_srt(input_path: str, offset_sec: float, output_path: str, text_case: 
 
     offset_ms = int(offset_sec * 1000)
 
-    with open(input_path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
+    with open(input_path, "r", encoding="utf-8", errors="replace") as fh:
+        content = fh.read()
 
-    # Split into subtitle blocks
-    blocks = re.split(r"\n\n+", content.strip())
+    # Remove WEBVTT header line and NOTE blocks
+    content = re.sub(r"^WEBVTT.*\n?", "", content)
+    content = re.sub(r"NOTE\b.*?(?=\n\n|\Z)", "", content, flags=re.DOTALL)
+
+    blocks = re.split(r"\n{2,}", content.strip())
     result_blocks = []
     new_index = 1
 
     for block in blocks:
-        lines = block.strip().splitlines()
-        if len(lines) < 3:
+        lines = [ln.rstrip() for ln in block.strip().splitlines()]
+        if not lines:
             continue
 
-        # Find the timecode line  e.g. "00:01:30,000 --> 00:01:35,500"
+        # Find timestamp line
         tc_line_idx = None
         for i, line in enumerate(lines):
             if "-->" in line:
@@ -138,35 +179,56 @@ def _shift_srt(input_path: str, offset_sec: float, output_path: str, text_case: 
         if tc_line_idx is None:
             continue
 
-        tc_line = lines[tc_line_idx]
-        m = re.match(
-            r"([\d:,]+)\s*-->\s*([\d:,]+)(.*)",
-            tc_line,
-        )
+        tc_raw = lines[tc_line_idx]
+        # The timestamp line may have VTT cue settings after the end time
+        # e.g. "00:01:30.000 --> 00:01:35.500 align:start position:0%"
+        m = re.match(r"([\d:.]+(?:,[\d]+)?)\s*-->\s*([\d:.]+(?:,[\d]+)?)(.*)", tc_raw)
         if not m:
             continue
 
-        start_ms = _srt_ts_to_ms(m.group(1)) - offset_ms
-        end_ms   = _srt_ts_to_ms(m.group(2)) - offset_ms
+        try:
+            start_ms = _ts_to_ms(m.group(1)) - offset_ms
+            end_ms   = _ts_to_ms(m.group(2)) - offset_ms
+        except Exception:
+            continue  # malformed timestamp — skip block
 
-        # Skip entries that end before t=0 (outside the clip)
         if end_ms < 0:
             continue
 
-        new_tc = f"{_ms_to_srt_ts(max(start_ms, 0))} --> {_ms_to_srt_ts(end_ms)}{m.group(3)}"
+        new_tc = f"{_ms_to_srt_ts(max(start_ms, 0))} --> {_ms_to_srt_ts(end_ms)}"
         text_lines = lines[tc_line_idx + 1:]
-        
-        # Apply uppercase if requested
+
+        # Clean up text lines
+        cleaned = []
+        for tl in text_lines:
+            tl = _strip_sub_tags(tl)
+            if tl:  # skip blank lines inside block
+                cleaned.append(tl)
+        if not cleaned:
+            continue  # no visible text — skip block
+
         if text_case == "upper":
-            text_lines = [line.upper() for line in text_lines]
-            
-        result_blocks.append(
-            f"{new_index}\n{new_tc}\n" + "\n".join(text_lines)
-        )
+            cleaned = [tl.upper() for tl in cleaned]
+
+        result_blocks.append(f"{new_index}\n{new_tc}\n" + "\n".join(cleaned))
         new_index += 1
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("\n\n".join(result_blocks) + "\n")
+    with open(output_path, "w", encoding="utf-8") as fh:
+        fh.write("\n\n".join(result_blocks) + ("\n" if result_blocks else ""))
+
+    return len(result_blocks)
+
+
+def _validate_srt_file(path: str) -> bool:
+    """Return True if the SRT file exists and has at least one subtitle entry."""
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+        return bool(re.search(r"\d+:\d+:\d+,\d+\s*-->\s*\d+:\d+:\d+,\d+", content))
+    except Exception:
+        return False
 
 
 def _rgb_to_ass(rgb_hex: str, alpha_hex: str = "00") -> str:
@@ -358,7 +420,7 @@ def run_clip(
         _append_log(task_id, f"[>>] File video siap: {downloaded_file}")
 
         # ── Step 2: Find & process subtitle file ────────────────────────────
-        subtitle_file   = None
+        subtitle_file    = None
         shifted_sub_path = None
 
         if subtitle_enabled:
@@ -366,15 +428,27 @@ def run_clip(
             _append_log(task_id, "[CC] Mencari file subtitle yang diunduh...")
 
             first_lang = subtitle_lang.split(",")[0].strip()
-            subtitle_file = _find_subtitle_file(output_dir, task_id, first_lang)
+
+            # Prioritize sub_file_path found in Step 1 (correct file)
+            if has_sub_file and sub_file_path and os.path.isfile(sub_file_path):
+                subtitle_file = sub_file_path
+                _append_log(task_id, f"[CC] Menggunakan subtitle dari Step 1: {os.path.basename(subtitle_file)}")
+            else:
+                # Fallback: broad scan for any matching subtitle in output dir
+                subtitle_file = _find_subtitle_file(output_dir, task_id, first_lang)
 
             if subtitle_file:
                 _append_log(task_id, f"[CC] Ditemukan: {os.path.basename(subtitle_file)}")
                 # Shift subtitle timestamps to match clip start
                 shifted_sub_path = os.path.join(output_dir, f"_sub_{task_id}.srt")
                 start_sec = _parse_seconds(start)
-                _shift_srt(subtitle_file, start_sec, shifted_sub_path, sub_case)
-                _append_log(task_id, "[CC] Timestamp subtitle disesuaikan dengan waktu potong.")
+                entry_count = _shift_srt(subtitle_file, start_sec, shifted_sub_path, sub_case)
+                if entry_count == 0 or not _validate_srt_file(shifted_sub_path):
+                    _append_log(task_id, "[!] Subtitle kosong setelah diproses (clip mungkin di luar jangkauan subtitle) — lanjut tanpa subtitle.")
+                    subtitle_enabled = False
+                    shifted_sub_path = None
+                else:
+                    _append_log(task_id, f"[CC] Timestamp disesuaikan. {entry_count} baris subtitle siap.")
             else:
                 _append_log(task_id, "[!] Subtitle tidak ditemukan — lanjut tanpa subtitle.")
                 subtitle_enabled = False
@@ -447,22 +521,26 @@ def run_clip(
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Pad Black Bars)")
 
             if has_sub_file and subtitle_type == "burn":
-                alignment = 5 if subtitle_position == "center" else 2
-                margin_v  = 10 if subtitle_position == "center" else 20
-                safe_sub = shifted_sub_path.replace("\\", "/").replace(":", "\\:")
-                
-                # Preset capcut
+                # Build safe path for FFmpeg subtitles filter on Windows
+                # Use pathlib to convert backslashes -> forward slashes correctly,
+                # then escape the drive-letter colon (e.g. d:/ -> d\:/)
+                import pathlib
+                safe_sub = pathlib.Path(shifted_sub_path).as_posix()
+                safe_sub = re.sub(r"([A-Za-z]):/", r"\1\\:/", safe_sub)
+                # Escape single quotes inside the path (rare but possible)
+                safe_sub = safe_sub.replace("'", "\\'")
+
                 primary_c = _rgb_to_ass(sub_primary_color)
                 outline_c = _rgb_to_ass(sub_outline_color)
                 back_c    = _rgb_to_ass(sub_back_color, sub_back_alpha)
                 bold_val  = "1" if sub_bold else "0"
                 ital_val  = "1" if sub_italic else "0"
                 undr_val  = "1" if sub_underline else "0"
-                
-                align = "2" # bottom
+
+                align = "2"  # bottom
                 if subtitle_position == "center":
                     align = "5"
-                    
+
                 force_style = (
                     f"FontSize={sub_fontsize},"
                     f"Alignment={align},"
@@ -480,7 +558,10 @@ def run_clip(
                 _append_log(task_id, f"[CC] Membakar subtitle ke video (posisi: {subtitle_position})...")
 
             if has_hook_title and os.path.isfile(temp_hook_sub_path):
-                safe_hook_sub = temp_hook_sub_path.replace("\\", "/").replace(":", "\\:")
+                import pathlib
+                safe_hook_sub = pathlib.Path(temp_hook_sub_path).as_posix()
+                safe_hook_sub = re.sub(r"([A-Za-z]):/", r"\1\\:/", safe_hook_sub)
+                safe_hook_sub = safe_hook_sub.replace("'", "\\'")
                 
                 # Map presets to ASS style string properties
                 preset_styles = {

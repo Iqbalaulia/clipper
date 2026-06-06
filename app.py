@@ -471,6 +471,25 @@ def clip_moments():
     if not url or not moments:
         return jsonify({"error": "URL dan momen wajib diisi."}), 400
 
+    # Subtitle settings
+    subtitle_enabled  = bool(data.get("subtitle_enabled", False))
+    subtitle_lang     = (data.get("subtitle_lang") or "id,en").strip()
+    subtitle_type     = (data.get("subtitle_type") or "burn").strip()
+    subtitle_auto     = bool(data.get("subtitle_auto", True))
+    subtitle_position = (data.get("subtitle_position") or "bottom").strip()
+    sub_fontsize      = str(data.get("sub_fontsize") or "20").strip()
+    sub_case          = (data.get("sub_case") or "normal").strip()
+    sub_bold          = bool(data.get("sub_bold", False))
+    sub_italic        = bool(data.get("sub_italic", False))
+    sub_underline     = bool(data.get("sub_underline", False))
+    sub_primary_color = (data.get("sub_primary_color") or "FFFFFF").strip().lstrip("#")
+    sub_outline_color = (data.get("sub_outline_color") or "000000").strip().lstrip("#")
+    sub_back_color    = (data.get("sub_back_color") or "000000").strip().lstrip("#")
+    sub_back_alpha    = (data.get("sub_back_alpha") or "80").strip()
+    sub_border_style  = str(data.get("sub_border_style") or "1").strip()
+    sub_outline_width = str(data.get("sub_outline_width") or "2").strip()
+    sub_shadow        = str(data.get("sub_shadow") or "1").strip()
+
     task_list = []
     for moment in moments:
         start = str(moment.get("start", "00:00:00"))
@@ -485,7 +504,23 @@ def clip_moments():
             end=end,
             output_dir=OUTPUT_DIR,
             video_format=data.get("video_format", "original"),
-            subtitle_enabled=data.get("subtitle_enabled", False),
+            subtitle_enabled=subtitle_enabled,
+            subtitle_lang=subtitle_lang,
+            subtitle_type=subtitle_type,
+            subtitle_auto=subtitle_auto,
+            subtitle_position=subtitle_position,
+            sub_fontsize=sub_fontsize,
+            sub_case=sub_case,
+            sub_bold=sub_bold,
+            sub_italic=sub_italic,
+            sub_underline=sub_underline,
+            sub_primary_color=sub_primary_color,
+            sub_outline_color=sub_outline_color,
+            sub_back_color=sub_back_color,
+            sub_back_alpha=sub_back_alpha,
+            sub_border_style=sub_border_style,
+            sub_outline_width=sub_outline_width,
+            sub_shadow=sub_shadow,
             hook_title=title,
             hook_fontsize=str(data.get("hook_fontsize", "34")),
             hook_preset=data.get("hook_preset", "yellow-pop"),
