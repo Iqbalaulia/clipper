@@ -473,7 +473,14 @@ def run_clip(
                 # Shift subtitle timestamps to match clip start
                 shifted_sub_path = os.path.join(output_dir, f"_sub_{task_id}.srt")
                 start_sec = _parse_seconds(start)
-                entry_count = _shift_srt(subtitle_file, start_sec, shifted_sub_path, sub_case)
+                
+                # If burning subtitles, we use one-pass accurate seek which starts decoder at fast_seek_sec.
+                # So the subtitle must be shifted by fast_seek_sec, not start_sec.
+                # For soft subs, the output video starts exactly at start_sec, so we shift by start_sec.
+                fast_seek_sec = max(0.0, start_sec - 30.0)
+                sub_shift_sec = fast_seek_sec if subtitle_type == "burn" else start_sec
+                
+                entry_count = _shift_srt(subtitle_file, sub_shift_sec, shifted_sub_path, sub_case)
                 if entry_count == 0 or not _validate_srt_file(shifted_sub_path):
                     _append_log(task_id, "[!] Subtitle kosong setelah diproses (clip mungkin di luar jangkauan subtitle) — lanjut tanpa subtitle.")
                     subtitle_enabled = False
@@ -484,40 +491,65 @@ def run_clip(
                 _append_log(task_id, "[!] Subtitle tidak ditemukan — lanjut tanpa subtitle.")
                 subtitle_enabled = False
 
-        # ── Step 3: Fast Cut Video ───────────────────────────────────────────
-        _update_task(task_id, status="cutting", progress=65)
-        _append_log(task_id, f"[CUT] Memotong video dari {start} hingga {end}...")
-
-        start_ff = _seconds_to_ffmpeg(start)
-        
-        try:
-            duration = _parse_seconds(end) - _parse_seconds(start)
-            duration_ff = str(max(duration, 1.0))
-        except Exception:
-            duration_ff = _seconds_to_ffmpeg(end) # Fallback
-
-        ffmpeg_cut_cmd = [
-            "ffmpeg", "-y",
-            "-ss", start_ff,
-            "-i", downloaded_file,
-            "-t", duration_ff,
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
-            temp_cut_path,
-        ]
-
-        _run_ffmpeg(task_id, ffmpeg_cut_cmd, start=65, end=75, start_str=start, end_str=end)
-
         _update_task(task_id, status="processing", progress=76)
-        
+
+        start_sec = _parse_seconds(start)
+        fast_seek_sec = max(0.0, start_sec - 30.0)
+        acc_seek_sec  = start_sec - fast_seek_sec
+
         has_hook_title = bool(hook_title)
+        needs_reencode  = video_format != "original" or (subtitle_enabled and subtitle_type == "burn") or has_hook_title
+        has_sub_file    = subtitle_enabled and shifted_sub_path and os.path.isfile(shifted_sub_path)
+        burn_subtitle   = has_sub_file and subtitle_type == "burn"
+
         if has_hook_title:
             _append_log(task_id, f"[HOOK] Membuat judul hook: {hook_title}")
+            # If using one-pass accurate seek, the filtergraph PTS is offset by fast_seek_sec.
+            # The output -ss acc_seek_sec drops frames up to acc_seek_sec.
+            # So the hook title must be burned starting at acc_seek_sec to appear at the start of the output video.
+            hook_start = acc_seek_sec if needs_reencode else 0.0
+            hook_end = hook_start + 4.0
+            
+            def format_srt_time(seconds):
+                h = int(seconds // 3600)
+                m = int((seconds % 3600) // 60)
+                s = int(seconds % 60)
+                ms = int((seconds % 1) * 1000)
+                return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+                
+            start_str = format_srt_time(hook_start)
+            end_str = format_srt_time(hook_end)
             with open(temp_hook_sub_path, "w", encoding="utf-8") as f:
-                f.write("1\n00:00:00,000 --> 00:00:04,000\n" + hook_title + "\n")
+                f.write(f"1\n{start_str} --> {end_str}\n{hook_title}\n")
 
-        needs_reencode = video_format != "original" or (subtitle_enabled and subtitle_type == "burn") or has_hook_title
-        has_sub_file = subtitle_enabled and shifted_sub_path and os.path.isfile(shifted_sub_path)
+        # ── Step 3: Cut video ────────────────────────────────────────────────
+        # For ANY re-encode (burn-in, format change, hook title) → ONE PASS directly from the source video
+        # using two-stage accurate seek so timing is frame-perfect.
+        # For stream-copy only → fast cut to temp file first.
+        skip_temp_cut = needs_reencode
+
+        if not skip_temp_cut:
+            _update_task(task_id, status="cutting", progress=65)
+            _append_log(task_id, f"[CUT] Memotong video dari {start} hingga {end}...")
+            
+            start_ff = _seconds_to_ffmpeg(start)
+            try:
+                duration = _parse_seconds(end) - _parse_seconds(start)
+                duration_ff = str(max(duration, 1.0))
+            except Exception:
+                duration_ff = _seconds_to_ffmpeg(end) # Fallback
+
+            ffmpeg_cut_cmd = [
+                "ffmpeg", "-y",
+                "-ss", start_ff,
+                "-i", downloaded_file,
+                "-t", duration_ff,
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                temp_cut_path,
+            ]
+            _run_ffmpeg(task_id, ffmpeg_cut_cmd, start=65, end=75, start_str=start, end_str=end)
+
 
         if not needs_reencode:
             if has_sub_file: # Soft sub only
@@ -538,7 +570,30 @@ def run_clip(
                 shutil.move(temp_cut_path, output_path)
         else:
             _append_log(task_id, "[PROCESS] Memproses video (re-encode)...")
-            ffmpeg_cmd = ["ffmpeg", "-y", "-i", temp_cut_path]
+
+            if skip_temp_cut:
+                # ── ONE-PASS from original with accurate two-stage seek ──────
+                # Fast seek to 30s before target (fast), then accurate seek
+                # remaining (decode up to 30s). Output starts EXACTLY at
+                # requested start_sec so timing is frame-perfect.
+                _update_task(task_id, status="cutting", progress=65)
+                _append_log(task_id, f"[CUT] Pemotongan presisi dari {start} hingga {end}...")
+                
+                try:
+                    duration = _parse_seconds(end) - _parse_seconds(start)
+                    duration_ff = str(max(duration, 1.0))
+                except Exception:
+                    duration_ff = _seconds_to_ffmpeg(end) # Fallback
+
+                ffmpeg_cmd = ["ffmpeg", "-y"]
+                if fast_seek_sec > 0:
+                    ffmpeg_cmd.extend(["-ss", f"{fast_seek_sec:.3f}"])
+                ffmpeg_cmd.extend(["-i", downloaded_file])
+                if acc_seek_sec > 0:
+                    ffmpeg_cmd.extend(["-ss", f"{acc_seek_sec:.3f}"])
+                ffmpeg_cmd.extend(["-t", duration_ff])
+            else:
+                ffmpeg_cmd = ["ffmpeg", "-y", "-i", temp_cut_path]
 
             if has_sub_file and subtitle_type == "soft":
                 ffmpeg_cmd.extend(["-i", shifted_sub_path])
