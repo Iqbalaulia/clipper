@@ -664,10 +664,11 @@ if (btnScan) {
     showScanStatus('loading', '⏳ Menganalisis video dan mendeteksi momen kontroversial...');
 
     try {
+      const subtitleLangVal = $('ctrl-subtitle-lang') ? $('ctrl-subtitle-lang').value : 'id,en';
       const res  = await fetch('/detect-moments', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ url, api_key: apiKey, num_moments: numMoments, cookies }),
+        body:    JSON.stringify({ url, api_key: apiKey, num_moments: numMoments, cookies, subtitle_lang: subtitleLangVal }),
       });
       const data = await res.json();
 
@@ -808,7 +809,7 @@ if (btnClipMoments) {
           video_format:     videoFormat,
           cookies:          cookies,
           subtitle_enabled:  subtitleEnabled,
-          subtitle_lang:     'id,en',
+          subtitle_lang:     $('ctrl-subtitle-lang') ? $('ctrl-subtitle-lang').value : 'id,en',
           subtitle_type:     'burn',
           subtitle_auto:     true,
           subtitle_position: $('ctrl-sub-position')    ? $('ctrl-sub-position').value    : 'bottom',

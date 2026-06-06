@@ -380,6 +380,7 @@ def detect_moments():
     url = (data.get("url") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     num_moments = int(data.get("num_moments") or 4)
+    subtitle_lang = (data.get("subtitle_lang") or "id,en").strip()
     use_cookies = os.path.isfile(COOKIES_FILE)
 
     if not url: return jsonify({"error": "URL video wajib diisi."}), 400
@@ -405,7 +406,7 @@ def detect_moments():
         sub_cmd = [
             sys.executable, "-m", "yt_dlp",
             "--write-auto-sub", "--write-sub",
-            "--sub-lang", "id,en", "--convert-subs", "srt",
+            "--sub-lang", subtitle_lang, "--convert-subs", "srt",
             "--skip-download",
             "--output", os.path.join(OUTPUT_DIR, "_scan_%(id)s.%(ext)s"),
             "--no-playlist", url
