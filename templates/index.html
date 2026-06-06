@@ -700,6 +700,50 @@
 
 </div>
 
-<script src="/static/app.js"></script>
+<!-- ── Clip Details Modal ── -->
+<div id="clip-details-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="modal-title">✨ AI Copywriting & Preview</h3>
+      <button class="modal-close" id="modal-close-btn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Left side: Video Preview -->
+      <div class="modal-video-container">
+        <video id="modal-video-player" controls preload="metadata"></video>
+      </div>
+      
+      <!-- Right side: AI generated Copy -->
+      <div class="modal-text-container">
+        <div id="modal-ai-spinner" style="display: none; text-align: center; padding: 20px;">
+          <div class="spinner" style="margin: 0 auto;"></div>
+          <p style="margin-top:10px; color:var(--text-dim);">Meng-generate copy (5-15d)...</p>
+        </div>
+        
+        <div id="modal-ai-result" style="display: none;">
+          <div class="ai-section">
+            <h4>🌟 Title Hooks</h4>
+            <div id="modal-title-hooks" class="ai-content-box"></div>
+          </div>
+          <div class="ai-section">
+            <h4>📝 Caption</h4>
+            <div id="modal-caption" class="ai-content-box" style="white-space: pre-wrap;"></div>
+          </div>
+          <div class="ai-section">
+            <h4>🔥 Call to Action (CTA)</h4>
+            <div id="modal-cta" class="ai-content-box"></div>
+          </div>
+          <div class="ai-section">
+            <h4>🏷️ Hashtags</h4>
+            <div id="modal-hashtags" class="ai-content-box"></div>
+          </div>
+          <button type="button" class="btn" id="modal-btn-copy-all" style="width: 100%; margin-top: 15px; background: var(--surface-3);">📋 Copy Semua</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=2"></script>
 </body>
 </html>

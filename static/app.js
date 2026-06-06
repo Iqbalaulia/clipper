@@ -962,7 +962,10 @@ function renderBatchGallery(tasks) {
       <div class="batch-clip-info">
         <p class="batch-clip-title">${escHtml(t.title || `Momen ${t.moment_index}`)}</p>
         <p class="batch-clip-time">⏱ ${t.start} → ${t.end}</p>
-        <a href="${fileUrl}" download class="batch-clip-download">⬇️ Download</a>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+          <a href="${fileUrl}" download class="batch-clip-download" style="flex:1; text-align:center;">⬇️ Download</a>
+          <button type="button" class="btn batch-clip-detail-btn" style="flex:1; padding: 6px;" onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index})">✨ Detail</button>
+        </div>
       </div>
     `;
     batchClipsGrid.appendChild(card);
@@ -1002,6 +1005,115 @@ function showScanStatus(type, message) {
   scanStatus.className = `scan-status ${type}`;
   scanStatus.textContent = message;
   scanStatus.style.display = 'block';
+}
+
+// ── Clip Details Modal Logic ──────────────────────────────────
+const clipModal = $('clip-details-modal');
+const modalCloseBtn = $('modal-close-btn');
+const modalVideoPlayer = $('modal-video-player');
+const modalAiSpinner = $('modal-ai-spinner');
+const modalAiResult = $('modal-ai-result');
+const modalTitleHooks = $('modal-title-hooks');
+const modalCaption = $('modal-caption');
+const modalCta = $('modal-cta');
+const modalHashtags = $('modal-hashtags');
+const modalBtnCopyAll = $('modal-btn-copy-all');
+
+function closeClipDetailsModal() {
+  clipModal.style.display = 'none';
+  modalVideoPlayer.pause();
+  modalVideoPlayer.src = '';
+}
+
+if (modalCloseBtn) {
+  modalCloseBtn.addEventListener('click', closeClipDetailsModal);
+}
+
+// Close when clicking outside modal content
+if (clipModal) {
+  clipModal.addEventListener('click', (e) => {
+    if (e.target === clipModal) closeClipDetailsModal();
+  });
+}
+
+window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
+  // Reset UI
+  clipModal.style.display = 'flex';
+  modalVideoPlayer.src = fileUrl;
+  modalAiResult.style.display = 'none';
+  modalAiSpinner.style.display = 'block';
+  modalTitleHooks.innerHTML = '';
+  modalCaption.innerHTML = '';
+  modalCta.innerHTML = '';
+  modalHashtags.innerHTML = '';
+
+  const apiKey = localStorage.getItem('clipper_gemini_key') || (ctrlApiKey ? ctrlApiKey.value : '');
+  const url = ctrlVideoUrl || urlInput.value;
+  const cookies = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
+
+  if (!apiKey) {
+    modalAiSpinner.style.display = 'none';
+    modalTitleHooks.textContent = "Error: Groq API Key belum diisi. Silakan isi di bagian Manual Clip atau Auto Clip.";
+    modalAiResult.style.display = 'block';
+    return;
+  }
+
+  // Ambil konteks spesifik dari momen yang dideteksi
+  let clipTitle = '';
+  let clipContext = '';
+  if (momentIndex !== undefined) {
+    const moment = detectedMoments.find(m => m.index === parseInt(momentIndex));
+    if (moment) {
+      clipTitle = moment.title;
+      clipContext = moment.reason;
+    }
+  }
+
+  try {
+    const res = await fetch('/generate-copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, clip_title: clipTitle, clip_context: clipContext }),
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan saat meng-generate copy.');
+
+    parseAndRenderCopy(data.copy);
+    
+    modalAiSpinner.style.display = 'none';
+    modalAiResult.style.display = 'block';
+  } catch (err) {
+    modalAiSpinner.style.display = 'none';
+    modalTitleHooks.textContent = `Error: ${err.message}`;
+    modalAiResult.style.display = 'block';
+  }
+}
+
+function parseAndRenderCopy(markdownText) {
+  // Regex untuk memecah respons Llama 3 berdasarkan heading
+  const titleMatch = markdownText.match(/JUDUL VIDEO.*?\n([^]*?)(?=\n📝|\n🔥|\n🏷️|$)/i);
+  const captionMatch = markdownText.match(/CAPTION.*?\n([^]*?)(?=\n🔥|\n🏷️|$)/i);
+  const ctaMatch = markdownText.match(/CALL TO ACTION.*?\n([^]*?)(?=\n🏷️|$)/i);
+  const tagsMatch = markdownText.match(/HASHTAGS.*?\n([^]*?)$/i);
+
+  modalTitleHooks.textContent = titleMatch ? titleMatch[1].trim() : '-';
+  modalCaption.textContent = captionMatch ? captionMatch[1].trim() : '-';
+  modalCta.textContent = ctaMatch ? ctaMatch[1].trim() : '-';
+  modalHashtags.textContent = tagsMatch ? tagsMatch[1].trim() : '-';
+}
+
+if (modalBtnCopyAll) {
+  modalBtnCopyAll.addEventListener('click', () => {
+    const textToCopy = `[JUDUL]\n${modalTitleHooks.textContent}\n\n[CAPTION]\n${modalCaption.textContent}\n\n[CTA]\n${modalCta.textContent}\n\n[HASHTAGS]\n${modalHashtags.textContent}`;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      const oldText = modalBtnCopyAll.textContent;
+      modalBtnCopyAll.textContent = '✅ Berhasil Disalin!';
+      setTimeout(() => modalBtnCopyAll.textContent = oldText, 2000);
+    }).catch(err => {
+      alert("Gagal menyalin teks: " + err);
+    });
+  });
 }
 
 function escHtml(str) {

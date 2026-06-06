@@ -300,28 +300,34 @@ def generate_copy():
     api_key = data.get("api_key")
     start_time = data.get("start", "")
     end_time = data.get("end", "")
+    clip_title = data.get("clip_title", "")
+    clip_context = data.get("clip_context", "")
 
     if not url or not api_key:
         return jsonify({"error": "URL dan API Key wajib diisi"}), 400
 
     try:
-        # 1. Ekstrak metadata video dengan yt-dlp
-        cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
-        use_cookies = bool(data.get("cookies", False))
-        if use_cookies and os.path.isfile(COOKIES_FILE):
-            cmd += ["--cookies", COOKIES_FILE]
-        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        info = json.loads(r.stdout)
-        
-        title = info.get("title", "Video tanpa judul")
-        description = info.get("description", "")
-        # Batasi panjang deskripsi agar tidak membebani konteks AI
-        if len(description) > 1000:
-            description = description[:1000] + "..."
-
-        time_context = ""
-        if start_time and end_time:
-            time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan copywriting kamu relevan dengan cuplikan spesifik ini!"
+        if clip_title and clip_context:
+            title = clip_title
+            description = f"Konteks pembicaraan dalam klip ini (berdasarkan transkrip video asli): {clip_context}"
+            time_context = f"\nFokus penuh pada konteks di atas. Buatkan copywriting yang SANGAT SPESIFIK untuk klip pendek ini!"
+        else:
+            # 1. Ekstrak metadata video dengan yt-dlp
+            cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+            use_cookies = bool(data.get("cookies", False))
+            if use_cookies and os.path.isfile(COOKIES_FILE):
+                cmd += ["--cookies", COOKIES_FILE]
+            r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            info = json.loads(r.stdout)
+            
+            title = info.get("title", "Video tanpa judul")
+            description = info.get("description", "")
+            if len(description) > 1000:
+                description = description[:1000] + "..."
+            
+            time_context = ""
+            if start_time and end_time:
+                time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan copywriting kamu relevan dengan cuplikan spesifik ini!"
 
         # 2. Siapkan prompt untuk Llama 3
         prompt = f"""Kamu adalah Social Media Manager profesional. Buatkan draft copywriting viral untuk TikTok, Instagram Reels, dan YouTube Shorts berdasarkan video berikut:
