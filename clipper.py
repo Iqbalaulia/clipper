@@ -75,20 +75,34 @@ def _parse_seconds(ts: str) -> float:
     raise ValueError(f"Format waktu tidak dikenal: {ts}")
 
 
-def _find_subtitle_file(output_dir: str, task_id: str, lang: str) -> str | None:
+def _find_subtitle_file(output_dir: str, task_id: str, lang: str, video_id: str = "") -> str | None:
     """
-    Find the downloaded subtitle file in output_dir.
-    Searches for files with prefixes: _tmp_<task_id>, _cache_*, _scan_*
+    Find a subtitle file for this specific task/video.
+    Priority: task-specific download (_sub_dl_{task_id}) > video cache (_cache_{video_id}) > scan (_scan_{video_id}).
+    Always filters by video_id to prevent cross-video contamination.
     """
-    candidates = []
+    task_prefix = f"_sub_dl_{task_id}"
+    cache_prefix = f"_cache_{video_id}" if video_id else None
+    scan_prefix  = f"_scan_{video_id}"  if video_id else None
+
+    buckets = {"task": [], "cache": [], "scan": []}  # priority order
+
     for f in os.listdir(output_dir):
         fname = f.lower()
-        if (f.startswith(f"_tmp_{task_id}") or f.startswith("_cache_") or f.startswith("_scan_")) \
-                and (fname.endswith(".srt") or fname.endswith(".vtt")):
-            candidates.append(os.path.join(output_dir, f))
+        if not (fname.endswith(".srt") or fname.endswith(".vtt")):
+            continue
+        if f.startswith(task_prefix):
+            buckets["task"].append(os.path.join(output_dir, f))
+        elif cache_prefix and f.startswith(cache_prefix):
+            buckets["cache"].append(os.path.join(output_dir, f))
+        elif scan_prefix and f.startswith(scan_prefix):
+            buckets["scan"].append(os.path.join(output_dir, f))
+
+    candidates = buckets["task"] or buckets["cache"] or buckets["scan"]
     if not candidates:
         return None
-    # Prefer file matching requested language
+
+    # Prefer file matching the requested language
     for c in candidates:
         if f".{lang}." in os.path.basename(c):
             return c
@@ -293,14 +307,47 @@ def run_clip(
             if os.path.isfile(cache_video_path):
                 _append_log(task_id, "[>>] Video sudah ada di cache. Menggunakan file lokal...")
                 downloaded_file = cache_video_path
-                
-                # Check for cached subtitle
+
+                # Even on video cache hit, download a FRESH task-specific subtitle
+                # so each concurrent task has its own copy and they don't conflict.
                 if subtitle_enabled:
+                    _append_log(task_id, "[>>] Mengunduh subtitle (task-specific)...")
                     first_lang = subtitle_lang.split(",")[0].strip()
-                    potential_sub = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.srt")
-                    if os.path.isfile(potential_sub):
-                        has_sub_file = True
-                        sub_file_path = potential_sub
+                    sub_dl_path = os.path.join(output_dir, f"_sub_dl_{task_id}")
+                    sub_cmd = [
+                        sys.executable, "-m", "yt_dlp",
+                        "--write-auto-sub", "--write-sub",
+                        "--sub-lang", subtitle_lang,
+                        "--convert-subs", "srt",
+                        "--skip-download",
+                        "--output", sub_dl_path,
+                        "--no-playlist",
+                    ]
+                    if cookies:
+                        sub_cmd += ["--cookies", cookies]
+                    sub_cmd.append(url)
+                    subprocess.run(
+                        sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace"
+                    )
+                    # Check for the task-specific download
+                    for fname in os.listdir(output_dir):
+                        if fname.startswith(f"_sub_dl_{task_id}") and \
+                                (fname.lower().endswith(".srt") or fname.lower().endswith(".vtt")):
+                            has_sub_file = True
+                            sub_file_path = os.path.join(output_dir, fname)
+                            break
+                    # Fallback: use scan file from detect-moments for this video_id
+                    if not has_sub_file:
+                        for ext in ("srt", "vtt"):
+                            fallback = os.path.join(output_dir, f"_scan_{video_id}.{first_lang}.{ext}")
+                            if os.path.isfile(fallback):
+                                has_sub_file = True
+                                sub_file_path = fallback
+                                _append_log(task_id, "[>>] Menggunakan subtitle dari hasil Scan sebelumnya.")
+                                break
+                    if not has_sub_file:
+                        _append_log(task_id, "⚠️ Gagal mengunduh subtitle. Klip akan dilanjutkan tanpa subtitle.")
             else:
                 _append_log(task_id, "[>>] Memulai unduhan video...")
 
@@ -357,65 +404,49 @@ def run_clip(
                     ]
                     if candidates:
                         downloaded_file = candidates[0]
-                        
+
                 if not downloaded_file:
                     raise RuntimeError(f"Gagal mengunduh video (Exit Code: {proc.returncode}). YouTube mungkin memblokir akses atau URL tidak valid.")
-                
-                # 2. Download Subtitles as a separate process
+
+                # Download subtitle to task-specific path (not shared cache)
                 if subtitle_enabled:
-                    _append_log(task_id, "[>>] Mengunduh subtitle (terpisah agar tidak mengganggu video)...")
+                    _append_log(task_id, "[>>] Mengunduh subtitle (task-specific)...")
                     first_lang = subtitle_lang.split(",")[0].strip()
+                    sub_dl_path = os.path.join(output_dir, f"_sub_dl_{task_id}")
                     sub_cmd = [
                         sys.executable, "-m", "yt_dlp",
-                        "--write-auto-sub",
-                        "--write-sub",
+                        "--write-auto-sub", "--write-sub",
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
                         "--skip-download",
-                        "--output", cache_video_path,
+                        "--output", sub_dl_path,
                         "--no-playlist",
                     ]
                     if cookies:
                         sub_cmd += ["--cookies", cookies]
                     sub_cmd.append(url)
-                    
-                    # We ignore errors for subtitle download so HTTP 429 won't crash the clip
                     subprocess.run(
                         sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         text=True, encoding="utf-8", errors="replace"
                     )
-                    
-                    
-                    potential_sub = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.srt")
-                    potential_sub_vtt = os.path.join(output_dir, f"_cache_{video_id}.{first_lang}.vtt")
-                    scan_sub_srt = os.path.join(output_dir, f"_scan_{video_id}.{first_lang}.srt")
-                    scan_sub_vtt = os.path.join(output_dir, f"_scan_{video_id}.{first_lang}.vtt")
-
-                    if os.path.isfile(potential_sub):
-                        has_sub_file = True
-                        sub_file_path = potential_sub
-                    elif os.path.isfile(potential_sub_vtt):
-                        has_sub_file = True
-                        sub_file_path = potential_sub_vtt
-                    elif os.path.isfile(scan_sub_srt):
-                        has_sub_file = True
-                        sub_file_path = scan_sub_srt
-                        _append_log(task_id, "[>>] Menggunakan subtitle dari hasil Scan sebelumnya.")
-                    elif os.path.isfile(scan_sub_vtt):
-                        has_sub_file = True
-                        sub_file_path = scan_sub_vtt
-                        _append_log(task_id, "[>>] Menggunakan subtitle dari hasil Scan sebelumnya.")
-                    else:
-                        # Fallback try to find any matching subtitle in output_dir
-                        for f in os.listdir(output_dir):
-                            if (f.startswith(f"_cache_{video_id}") or f.startswith(f"_scan_{video_id}")) and (f.endswith(".srt") or f.endswith(".vtt")):
+                    # Find the task-specific subtitle file
+                    for fname in os.listdir(output_dir):
+                        if fname.startswith(f"_sub_dl_{task_id}") and \
+                                (fname.lower().endswith(".srt") or fname.lower().endswith(".vtt")):
+                            has_sub_file = True
+                            sub_file_path = os.path.join(output_dir, fname)
+                            break
+                    # Fallback: scan file from detect-moments
+                    if not has_sub_file:
+                        for ext in ("srt", "vtt"):
+                            fallback = os.path.join(output_dir, f"_scan_{video_id}.{first_lang}.{ext}")
+                            if os.path.isfile(fallback):
                                 has_sub_file = True
-                                sub_file_path = os.path.join(output_dir, f)
-                                _append_log(task_id, f"[>>] Ditemukan file subtitle alternatif: {f}")
+                                sub_file_path = fallback
+                                _append_log(task_id, "[>>] Menggunakan subtitle dari hasil Scan sebelumnya.")
                                 break
-                                
-                        if not has_sub_file:
-                            _append_log(task_id, "⚠️ Gagal mengunduh subtitle (Mungkin limit HTTP 429). Klip akan dilanjutkan tanpa subtitle.")
+                    if not has_sub_file:
+                        _append_log(task_id, "⚠️ Gagal mengunduh subtitle (Mungkin limit HTTP 429). Klip akan dilanjutkan tanpa subtitle.")
 
         _append_log(task_id, f"[>>] File video siap: {downloaded_file}")
 
@@ -429,13 +460,13 @@ def run_clip(
 
             first_lang = subtitle_lang.split(",")[0].strip()
 
-            # Prioritize sub_file_path found in Step 1 (correct file)
+            # Use sub_file_path found in Step 1 (task-specific download)
             if has_sub_file and sub_file_path and os.path.isfile(sub_file_path):
                 subtitle_file = sub_file_path
-                _append_log(task_id, f"[CC] Menggunakan subtitle dari Step 1: {os.path.basename(subtitle_file)}")
+                _append_log(task_id, f"[CC] Menggunakan subtitle: {os.path.basename(subtitle_file)}")
             else:
-                # Fallback: broad scan for any matching subtitle in output dir
-                subtitle_file = _find_subtitle_file(output_dir, task_id, first_lang)
+                # Broad fallback filtered by video_id to prevent wrong-video contamination
+                subtitle_file = _find_subtitle_file(output_dir, task_id, first_lang, video_id)
 
             if subtitle_file:
                 _append_log(task_id, f"[CC] Ditemukan: {os.path.basename(subtitle_file)}")
@@ -601,7 +632,18 @@ def run_clip(
             _run_ffmpeg(task_id, ffmpeg_cmd, start=50, end=85, start_str=start, end_str=end)
 
         # ── Step 5: Cleanup ──────────────────────────────────────────────────
-        for f in [downloaded_file, subtitle_file, shifted_sub_path, temp_hook_sub_path]:
+        # Delete ONLY task-specific temp files. The video cache (_cache_{video_id}.mp4)
+        # is intentionally kept for reuse on subsequent clips of the same video.
+        temp_files_to_delete = [
+            temp_cut_path,          # _tmpcut_{task_id}.mp4
+            shifted_sub_path,       # _sub_{task_id}.srt  (shifted subtitle)
+            temp_hook_sub_path,     # _hook_{task_id}.srt
+        ]
+        # Also delete the task-specific subtitle download (sub_file_path if it's task-specific)
+        if sub_file_path and os.path.basename(sub_file_path).startswith(f"_sub_dl_{task_id}"):
+            temp_files_to_delete.append(sub_file_path)
+
+        for f in temp_files_to_delete:
             if f and os.path.isfile(f):
                 try:
                     os.remove(f)
