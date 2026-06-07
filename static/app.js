@@ -696,7 +696,8 @@ if (btnScan) {
         momentsResultTitle.textContent = `${detectedMoments.length} Momen Ditemukan ${vTitle}`;
       }
 
-      showScanStatus('success', `✅ ${detectedMoments.length} momen kontroversial berhasil dideteksi!`);
+      showScanStatus('success', `✅ ${detectedMoments.length} momen berhasil dideteksi! ${data.has_transcript ? '📝 Berdasarkan transcript nyata' : '⚠️ Tanpa transcript — estimasi AI'} · Model: ${data.model_used || 'AI'}`);
+
 
       // Render moment cards
       renderMomentCards(detectedMoments);

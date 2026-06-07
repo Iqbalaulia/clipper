@@ -378,6 +378,86 @@ Format output yang diinginkan:
 
 
 
+# ── Helpers for SRT parsing ─────────────────────────────────────────────────
+
+import re
+
+def parse_srt_to_segments(srt_text):
+    """
+    Parse raw SRT content into list of {start, end, text} dicts.
+    Strips HTML tags, sequence numbers, and deduplicates repeated lines.
+    Returns a list sorted by start time.
+    """
+    # Remove HTML/XML tags (e.g. <c>, <00:00:05.000>)
+    srt_clean = re.sub(r'<[^>]+>', '', srt_text)
+    # Split into blocks by blank lines
+    blocks = re.split(r'\n\s*\n', srt_clean.strip())
+    segments = []
+    seen_texts = set()
+    
+    time_pattern = re.compile(
+        r'(\d{2}:\d{2}:\d{2})[,.]\d{3}\s*-->\s*(\d{2}:\d{2}:\d{2})[,.]\d{3}'
+    )
+    
+    for block in blocks:
+        lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
+        if len(lines) < 2:
+            continue
+        # Find timestamp line
+        ts_line = None
+        text_lines = []
+        for line in lines:
+            if time_pattern.match(line):
+                ts_line = line
+            elif ts_line and not line.isdigit():
+                text_lines.append(line)
+        
+        if not ts_line or not text_lines:
+            continue
+        
+        m = time_pattern.match(ts_line)
+        if not m:
+            continue
+        
+        start_ts = m.group(1)  # HH:MM:SS
+        end_ts   = m.group(2)
+        text     = ' '.join(text_lines).strip()
+        
+        # Skip empty or duplicate consecutive text
+        if not text or text in seen_texts:
+            continue
+        seen_texts.add(text)
+        
+        segments.append({"start": start_ts, "end": end_ts, "text": text})
+    
+    return segments
+
+
+def format_transcript_for_ai(segments, max_chars=12000):
+    """
+    Format segments into a clean readable transcript for AI consumption.
+    Format: [HH:MM:SS] text
+    """
+    lines = []
+    total = 0
+    for seg in segments:
+        line = f"[{seg['start']}] {seg['text']}"
+        if total + len(line) > max_chars:
+            break
+        lines.append(line)
+        total += len(line)
+    return '\n'.join(lines)
+
+
+def srt_timestamp_to_seconds(ts):
+    """Convert HH:MM:SS to integer seconds."""
+    parts = ts.split(':')
+    try:
+        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+    except:
+        return 0
+
+
 # ── Detect Controversial Moments ────────────────────────────────────────────
 
 @app.route("/detect-moments", methods=["POST"])
@@ -393,6 +473,7 @@ def detect_moments():
     if not api_key: return jsonify({"error": "Groq API Key wajib diisi."}), 400
 
     try:
+        # ── Step 1: Ambil metadata video ────────────────────────────────
         cmd = [
             sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist",
             "--js-runtimes", "node:node.exe",
@@ -424,9 +505,12 @@ def detect_moments():
 
         info = json.loads(r.stdout)
         title = info.get("title", "Video tanpa judul")
-        
-        # Download subtitle
+        duration_secs = int(info.get("duration") or 0)  # total durasi video dalam detik
+        duration_str  = f"{duration_secs // 3600:02d}:{(duration_secs % 3600) // 60:02d}:{duration_secs % 60:02d}"
+
+        # ── Step 2: Download subtitle / auto-caption ─────────────────────
         transcript_text = ""
+        raw_srt = ""
         sub_cmd = [
             sys.executable, "-m", "yt_dlp",
             "--write-auto-sub", "--write-sub",
@@ -441,48 +525,124 @@ def detect_moments():
         if use_cookies:
             sub_cmd += ["--cookies", COOKIES_FILE]
         sub_cmd.append(url)
-        subprocess.run(sub_cmd, capture_output=True, text=True, timeout=60)
-        
+
+        sub_result = subprocess.run(sub_cmd, capture_output=True, text=True, timeout=90)
+
         video_id = info.get("id", "unknown")
+        srt_files_found = []
         for f in os.listdir(OUTPUT_DIR):
             if f.startswith(f"_scan_{video_id}") and f.endswith(".srt"):
+                srt_files_found.append(f)
                 try:
                     with open(os.path.join(OUTPUT_DIR, f), "r", encoding="utf-8") as srt_f:
-                        transcript_text += srt_f.read()
-                except:
+                        raw_srt += srt_f.read() + "\n"
+                except Exception:
                     pass
 
-        prompt = f'''Kamu adalah AI Video Editor. Cari {num_moments} momen paling menarik/kontroversial dari video ini.
-Judul: {title}
-Subtitle/Transcript:
-{transcript_text[:10000]}
+        has_transcript = bool(raw_srt.strip())
 
-PENTING: Hapus kata "Momen" dari judul, dan buat judul tersebut memiliki hooks maksimal (clickbait positif yang sangat memancing rasa penasaran, maksimal 3-5 kata). Output HARUS berupa JSON murni dengan format:
-[
-  {{"index": 1, "start": "00:01:00", "end": "00:01:30", "title": "Fakta Mengejutkan!", "description": "Deskripsi singkat"}}, ...
-]'''
+        if has_transcript:
+            # Parse & clean SRT
+            segments = parse_srt_to_segments(raw_srt)
+            transcript_text = format_transcript_for_ai(segments)
+        
+        # ── Step 3: Susun prompt yang akurat ────────────────────────────
+        if has_transcript and transcript_text:
+            transcript_section = f"""TRANSCRIPT (dengan timestamp, format [HH:MM:SS] teks):
+{transcript_text}"""
+            ai_basis = "transcript nyata di atas"
+        else:
+            # Fallback: tidak ada transcript
+            transcript_section = f"""PERHATIAN: Tidak ada transcript yang tersedia untuk video ini.
+Gunakan pengetahuanmu tentang video berjudul \"{title}\" untuk memperkirakan momen yang menarik.
+Pastikan timestamp yang kamu buat MASUK AKAL dan tidak melebihi durasi video ({duration_str}).
+Durasi video: {duration_str} ({duration_secs} detik)."""
+            ai_basis = "pengetahuan tentang topik video"
+
+        prompt = f"""Kamu adalah AI Video Editor profesional yang bertugas menemukan momen paling menarik, kontroversial, atau viral dari sebuah video.
+
+INFORMASI VIDEO:
+- Judul: {title}
+- Durasi total: {duration_str} ({duration_secs} detik)
+
+{transcript_section}
+
+TUGAS:
+Temukan tepat {num_moments} momen terbaik yang:
+1. Memiliki potensi viral tinggi (konflik, fakta mengejutkan, momen lucu, pernyataan kontroversial, dll)
+2. Berdurasi antara 30 detik hingga 3 menit per klip
+3. Timestamp START dan END HARUS akurat berdasarkan {ai_basis}
+4. Timestamp END TIDAK BOLEH melebihi {duration_str}
+5. START dan END HARUS dalam format HH:MM:SS
+
+RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing-masing:
+{{
+  "index": (nomor urut 1-{num_moments}),
+  "start": "HH:MM:SS",
+  "end": "HH:MM:SS",
+  "title": "(3-5 kata hooks/clickbait TANPA kata 'Momen')",
+  "reason": "(1 kalimat alasan kenapa momen ini viral/kontroversial, berdasarkan isi transcript)"
+}}"""
+
+        # ── Step 4: Panggil Groq AI ──────────────────────────────────────
         groq_url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        
+        # Pilih model: gunakan model lebih besar jika ada transcript (lebih akurat)
+        model = "llama-3.3-70b-versatile" if has_transcript else "llama-3.1-8b-instant"
+        
         payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "user", "content": prompt}],
-            "response_format": {"type": "json_object"}
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Kamu adalah AI Video Editor ahli. Selalu kembalikan JSON yang valid dan PASTIKAN timestamp tidak melebihi durasi video."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.3,  # lebih deterministik, mengurangi halusinasi
+            "max_tokens": 2000,
         }
-        
-        # Since we use json_object, let's adjust prompt to demand an object
-        prompt += "\nBerikan dalam bentuk JSON object dengan key 'moments' berisi array tersebut."
-        payload["messages"][0]["content"] = prompt
-        
-        r_ai = requests.post(groq_url, headers=headers, json=payload, timeout=60)
+
+        r_ai = requests.post(groq_url, headers=headers, json=payload, timeout=90)
         r_ai.raise_for_status()
         rd = r_ai.json()
         content_ai = rd["choices"][0]["message"]["content"]
-        moments = json.loads(content_ai).get("moments", [])
-        
+        moments_raw = json.loads(content_ai).get("moments", [])
+
+        # ── Step 5: Validasi timestamp ───────────────────────────────────
+        moments_valid = []
+        for m in moments_raw:
+            start_s = srt_timestamp_to_seconds(str(m.get("start", "00:00:00")))
+            end_s   = srt_timestamp_to_seconds(str(m.get("end",   "00:01:00")))
+
+            # Clamp end ke durasi video
+            if duration_secs > 0:
+                end_s = min(end_s, duration_secs)
+
+            # Pastikan end > start dan durasi minimal 15 detik
+            if end_s <= start_s:
+                end_s = min(start_s + 60, duration_secs if duration_secs > 0 else start_s + 60)
+
+            # Konversi balik ke HH:MM:SS
+            def secs_to_ts(s):
+                s = max(0, int(s))
+                return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
+
+            moments_valid.append({
+                "index":  m.get("index", len(moments_valid) + 1),
+                "start":  secs_to_ts(start_s),
+                "end":    secs_to_ts(end_s),
+                "title":  str(m.get("title", f"Momen {len(moments_valid)+1}")),
+                "reason": str(m.get("reason", m.get("description", ""))),
+            })
+
         return jsonify({
-            "moments": moments,
-            "title": title,
-            "has_transcript": bool(transcript_text)
+            "moments":        moments_valid,
+            "video_title":    title,
+            "has_transcript": has_transcript,
+            "model_used":     model,
         })
 
     except Exception as e:
