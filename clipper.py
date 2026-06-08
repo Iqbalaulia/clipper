@@ -649,6 +649,8 @@ def run_clip(
                 if subtitle_position == "center":
                     align = "5"
 
+                margin_v = "90" if align == "2" else "10"
+
                 force_style = (
                     f"FontSize={sub_fontsize},"
                     f"Alignment={align},"
@@ -660,7 +662,8 @@ def run_clip(
                     f"BackColour={back_c},"
                     f"BorderStyle={sub_border_style},"
                     f"Outline={sub_outline_width},"
-                    f"Shadow={sub_shadow}"
+                    f"Shadow={sub_shadow},"
+                    f"MarginV={margin_v}"
                 )
                 vf_filters.append(f"subtitles='{safe_sub}':force_style='{force_style}'")
                 _append_log(task_id, f"[CC] Membakar subtitle ke video (posisi: {subtitle_position})...")
