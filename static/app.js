@@ -462,12 +462,17 @@ const SUBTITLE_PRESETS = [
   {
     id: 'white-box', name: 'White\nBox',
     preview: { text: 'Aa', color: '#fff', shadow: 'none', bg: 'rgba(0,0,0,0.75)', weight: 'normal', style: 'normal', deco: 'none' },
-    params: { fontSize: '22', bold: false, italic: false, underline: false, case: 'normal', primaryColor: 'FFFFFF', outlineColor: '000000', backColor: '000000', backAlpha: '80', borderStyle: '3', outlineWidth: '0', shadow: '0' }
+    params: { fontSize: '22', bold: false, italic: false, underline: false, case: 'normal', primaryColor: 'FFFFFF', outlineColor: '000000', backColor: '000000', backAlpha: '80', borderStyle: '3', outlineWidth: '3', shadow: '0' }
   },
   {
     id: 'yellow-box', name: 'Yellow\nBox',
     preview: { text: 'Aa', color: '#FFFF00', shadow: 'none', bg: 'rgba(0,0,0,0.85)', weight: 'bold', style: 'normal', deco: 'none' },
-    params: { fontSize: '22', bold: true, italic: false, underline: false, case: 'normal', primaryColor: 'FFFF00', outlineColor: '000000', backColor: '000000', backAlpha: 'CC', borderStyle: '3', outlineWidth: '0', shadow: '0' }
+    params: { fontSize: '22', bold: true, italic: false, underline: false, case: 'normal', primaryColor: 'FFFF00', outlineColor: '000000', backColor: '000000', backAlpha: 'CC', borderStyle: '3', outlineWidth: '3', shadow: '0' }
+  },
+  {
+    id: 'black-white-box', name: 'White Box\nBlack Text',
+    preview: { text: 'Aa', color: '#000', shadow: 'none', bg: '#fff', weight: 'bold', style: 'normal', deco: 'none' },
+    params: { fontSize: '22', bold: true, italic: false, underline: false, case: 'upper', primaryColor: '000000', outlineColor: 'FFFFFF', backColor: 'FFFFFF', backAlpha: '00', borderStyle: '3', outlineWidth: '3', shadow: '0' }
   },
   {
     id: 'neon', name: 'Neon\nGlow',
@@ -542,6 +547,12 @@ function applyPreset(preset) {
   if (subBorderStyle)  subBorderStyle.value  = p.borderStyle;
   if (subOutlineWidth) subOutlineWidth.value = p.outlineWidth;
   if (subShadowVal)    subShadowVal.value    = p.shadow;
+
+  // Auto switch to burn mode for styled presets (anything except 'none')
+  if (preset.id !== 'none' && subtitleType) {
+    subtitleType.value = 'burn';
+    syncPositionRow();
+  }
 }
 
 // Apply preset to auto-clip controls

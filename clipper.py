@@ -619,6 +619,14 @@ def run_clip(
             elif video_format == "vertical-pad":
                 vf_filters.append("pad='max(iw,ih*9/16)':'max(ih,iw*16/9)':(ow-iw)/2:(oh-ih)/2:black")
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Pad Black Bars)")
+            elif video_format == "vertical-blur":
+                vf_filters.append(
+                    "split=2[bg][fg];"
+                    "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',boxblur=20:5[bg_blur];"
+                    "[fg]scale='min(iw,ih*9/16)*1.44':-1[fg_scaled];"
+                    "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
+                )
+                _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background)")
 
             if has_sub_file and subtitle_type == "burn":
                 # Build safe path for FFmpeg subtitles filter on Windows
