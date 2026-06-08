@@ -517,7 +517,8 @@ def run_clip(
             # The output -ss acc_seek_sec drops frames up to acc_seek_sec.
             # So the hook title must be burned starting at acc_seek_sec to appear at the start of the output video.
             hook_start = acc_seek_sec if needs_reencode else 0.0
-            hook_end = hook_start + 4.0
+            hook_end = hook_start + 6.0   # Tampil 6 detik — cukup untuk menarik perhatian
+
             
             def format_srt_time(seconds):
                 h = int(seconds // 3600)
@@ -661,16 +662,74 @@ def run_clip(
                 safe_hook_sub = pathlib.Path(temp_hook_sub_path).as_posix()
                 safe_hook_sub = re.sub(r"([A-Za-z]):/", r"\1\\:/", safe_hook_sub)
                 safe_hook_sub = safe_hook_sub.replace("'", "\\'")
-                
-                # Map presets to ASS style string properties
-                preset_styles = {
-                    "yellow-pop": "PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=2",
-                    "tiktok": "PrimaryColour=&H005C3BFF,OutlineColour=&H00FFFFFF,BorderStyle=1,Outline=3,Shadow=0",
-                    "white-box": "PrimaryColour=&H00FFFFFF,BackColour=&H80000000,BorderStyle=3,Outline=0,Shadow=0",
-                    "neon": "PrimaryColour=&H00FFFF00,OutlineColour=&H00333300,BorderStyle=1,Outline=2,Shadow=5",
-                    "classic": "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1",
+
+                hook_style_presets = {
+                    "yellow-pop": {
+                        "font":         "Impact",
+                        "primary":      "&H0000FFFF",
+                        "outline":      "&H00000000",
+                        "back":         "&H00000000",
+                        "border_style": "1",
+                        "outline_w":    "4",
+                        "shadow":       "3",
+                    },
+                    "tiktok": {
+                        "font":         "Impact",
+                        "primary":      "&H005C3BFF",
+                        "outline":      "&H00FFFFFF",
+                        "back":         "&H00000000",
+                        "border_style": "1",
+                        "outline_w":    "4",
+                        "shadow":       "0",
+                    },
+                    "white-box": {
+                        "font":         "Arial",
+                        "primary":      "&H00FFFFFF",
+                        "outline":      "&H00000000",
+                        "back":         "&HAA000000",
+                        "border_style": "3",
+                        "outline_w":    "0",
+                        "shadow":       "0",
+                    },
+                    "neon": {
+                        "font":         "Impact",
+                        "primary":      "&H00FFFF00",
+                        "outline":      "&H00333300",
+                        "back":         "&H00000000",
+                        "border_style": "1",
+                        "outline_w":    "3",
+                        "shadow":       "8",
+                    },
+                    "classic": {
+                        "font":         "Arial",
+                        "primary":      "&H00FFFFFF",
+                        "outline":      "&H00000000",
+                        "back":         "&H00000000",
+                        "border_style": "1",
+                        "outline_w":    "3",
+                        "shadow":       "2",
+                    },
+                    "fire": {
+                        "font":         "Impact",
+                        "primary":      "&H000045FF",
+                        "outline":      "&H00000000",
+                        "back":         "&H00000000",
+                        "border_style": "1",
+                        "outline_w":    "5",
+                        "shadow":       "4",
+                    },
+                    "breaking": {
+                        "font":         "Impact",
+                        "primary":      "&H00FFFFFF",
+                        "outline":      "&H000000CC",
+                        "back":         "&H880000CC",
+                        "border_style": "3",
+                        "outline_w":    "0",
+                        "shadow":       "0",
+                    },
                 }
-                selected_style = preset_styles.get(hook_preset, preset_styles["yellow-pop"])
+
+                ps = hook_style_presets.get(hook_preset, hook_style_presets["yellow-pop"])
                 
                 align_hook = "8" # top
                 if hook_position == "center":
@@ -678,9 +737,21 @@ def run_clip(
                 elif hook_position == "bottom":
                     align_hook = "2"
                 
-                hook_style = f"FontSize={hook_fontsize},Alignment={align_hook},Bold=1,{selected_style},MarginV=40"
+                hook_style = (
+                    f"FontName={ps['font']},"
+                    f"FontSize={hook_fontsize},"
+                    f"Alignment={align_hook},"
+                    f"Bold=1,"
+                    f"PrimaryColour={ps['primary']},"
+                    f"OutlineColour={ps['outline']},"
+                    f"BackColour={ps['back']},"
+                    f"BorderStyle={ps['border_style']},"
+                    f"Outline={ps['outline_w']},"
+                    f"Shadow={ps['shadow']},"
+                    f"MarginV=50"
+                )
                 vf_filters.append(f"subtitles='{safe_hook_sub}':force_style='{hook_style}'")
-                _append_log(task_id, f"[HOOK] Membakar judul hook ke video (Style: {hook_preset}, Size: {hook_fontsize})...")
+                _append_log(task_id, f"[HOOK] Membakar judul hook ke video (Preset: {hook_preset}, Font: {ps['font']}, Size: {hook_fontsize})...")
 
             if vf_filters:
                 ffmpeg_cmd.extend(["-vf", ",".join(vf_filters)])

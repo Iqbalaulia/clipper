@@ -239,28 +239,50 @@ def generate_hook():
         
         title = info.get("title", "Video tanpa judul")
         description = info.get("description", "")
-        # Batasi panjang deskripsi agar tidak membebani konteks AI
-        if len(description) > 1000:
-            description = description[:1000] + "..."
+        if len(description) > 800:
+            description = description[:800] + "..."
 
         time_context = ""
         if start_time and end_time:
-            time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan judul relevan dengan cuplikan spesifik ini!"
+            time_context = f"\nSegmen klip: {start_time} → {end_time}. Hook HARUS relevan dengan momen spesifik di rentang waktu tersebut."
 
-        # 2. Siapkan prompt untuk Llama 3
-        prompt = f"""Kamu adalah ahli pembuat Hook Video TikTok/Reels/Shorts.
-Tugas kamu adalah membuat 1 kalimat pendek (Maksimal 3-5 kata) yang SANGAT memancing rasa penasaran (clickbait positif) untuk judul video berikut:
-Judul Asli: {title}
+        # 2. Prompt yang lebih tajam dan viral-focused
+        prompt = f"""Kamu adalah viral content strategist untuk TikTok, Reels, dan YouTube Shorts kelas dunia.
+
+Judul Video Asli: {title}
 Deskripsi: {description}{time_context}
 
-HANYA BERIKAN teks judulnya saja, tanpa tanda kutip, tanpa penjelasan, dan gunakan huruf kapital yang sesuai. Contoh: Tonton Sampai Habis!, Fakta Mengejutkan!, Rahasia Terbongkar!"""
+TUGASMU:
+Buat 3 kandidat hook title untuk video ini. Hook harus:
+- MAKSIMAL 5 kata (lebih pendek = lebih kuat)
+- Memicu FOMO atau rasa penasaran ekstrem
+- Menggunakan kata-kata power seperti: SYOK, KETAHUAN, TERBONGKAR, HARUS TONTON, TIDAK DISANGKA, GILA, RAHASIA, HANCUR, VIRAL, dll
+- HURUF KAPITAL SEMUA untuk impact maksimal
+- Tidak generik — harus spesifik ke konten video ini
 
-        # 3. Panggil Groq API
+Referensi hook viral sukses:
+- "KETAHUAN! DIA BOHONG SELAMA INI"
+- "FAKTA GILA YANG DISEMBUNYIKAN!"  
+- "INI YANG TERJADI SEBENARNYA!"
+- "MEREKA PANIK HABIS INI!"
+- "TIDAK AKAN PERCAYA KALAU TIDAK LIHAT!"
+
+Setelah membuat 3 kandidat, pilih 1 yang PALING impactful.
+
+BALAS HANYA dengan teks hook final saja (tanpa penjelasan, tanpa nomor, tanpa tanda kutip). Maksimal 6 kata."""
+
+        # 3. Panggil Groq API dengan model yang lebih kuat
         payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": 50
+            "model": "llama-3.3-70b-versatile",  # Model lebih besar = hasil lebih kreatif & akurat
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Kamu adalah ahli viral content. Tugasmu HANYA mengeluarkan hook title singkat, tanpa penjelasan apapun."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.85,   # Sedikit kreatif tapi tetap terkontrol
+            "max_tokens": 40
         }
         
         headers = {
@@ -281,15 +303,24 @@ HANYA BERIKAN teks judulnya saja, tanpa tanda kutip, tanpa penjelasan, dan gunak
         result = response.json()
         hook_title = result["choices"][0]["message"]["content"].strip()
         
-        # Bersihkan dari tanda kutip jika AI bandel
+        # Bersihkan output AI dari artefak yang tidak diinginkan
+        # Hapus tanda kutip, newline berlebih, nomor urut, dll
         hook_title = hook_title.replace('"', '').replace("'", "")
+        hook_title = hook_title.replace('\n', ' ').replace('\r', '')
+        # Hapus prefix "1." atau "Hook:" jika AI tidak patuh instruksi
+        hook_title = re.sub(r'^(hook\s*[:.]?\s*|final\s*[:.]?\s*|\d+\.\s*)', '', hook_title, flags=re.IGNORECASE).strip()
+        # Batasi panjang akhir — ambil hanya 6 kata pertama jika terlalu panjang
+        words = hook_title.split()
+        if len(words) > 6:
+            hook_title = ' '.join(words[:6])
         
-        return jsonify({"hook_title": hook_title})
+        return jsonify({"hook_title": hook_title.upper()})  # Force UPPERCASE untuk impact
 
     except subprocess.CalledProcessError as e:
         return jsonify({"error": f"Gagal mengekstrak info video: {e.stderr}"}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/generate-copy", methods=["POST"])
@@ -580,7 +611,7 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
   "index": (nomor urut 1-{num_moments}),
   "start": "HH:MM:SS",
   "end": "HH:MM:SS",
-  "title": "(3-5 kata hooks/clickbait TANPA kata 'Momen')",
+  "title": "(HOOK TITLE VIRAL: Maksimal 5 kata, HURUF KAPITAL SEMUA, memicu FOMO/penasaran ekstrem. Contoh: KETAHUAN! DIA BOHONG SELAMA INI, FAKTA GILA YANG DISEMBUNYIKAN!)",
   "reason": "(1 kalimat alasan kenapa momen ini viral/kontroversial, berdasarkan isi transcript)"
 }}"""
 
@@ -634,7 +665,7 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
                 "index":  m.get("index", len(moments_valid) + 1),
                 "start":  secs_to_ts(start_s),
                 "end":    secs_to_ts(end_s),
-                "title":  str(m.get("title", f"Momen {len(moments_valid)+1}")),
+                "title":  str(m.get("title", f"Momen {len(moments_valid)+1}")).upper(),
                 "reason": str(m.get("reason", m.get("description", ""))),
             })
 
