@@ -215,9 +215,90 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
+def _call_gemini(api_key: str, messages: list, response_json: bool = False,
+                  max_retries: int = 3, base_delay: float = 2.0) -> str:
+    """Helper to call Gemini API via native REST endpoint.
+    
+    Automatically retries on transient errors (429, 500, 502, 503, 504)
+    with exponential backoff.
+    """
+    system_instruction = ""
+    contents = []
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "system":
+            system_instruction = content
+        else:
+            gemini_role = "user" if role == "user" else "model"
+            contents.append({
+                "role": gemini_role,
+                "parts": [{"text": content}]
+            })
+            
+    payload = {
+        "contents": contents
+    }
+    if system_instruction:
+        payload["systemInstruction"] = {
+            "parts": [{"text": system_instruction}]
+        }
+        
+    config = {}
+    if response_json:
+        config["responseMimeType"] = "application/json"
+    if config:
+        payload["generationConfig"] = config
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+
+    RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+    last_error = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=90)
+
+            if r.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
+                delay = base_delay * (2 ** attempt)  # 2s, 4s, 8s
+                print(f"[Gemini] {r.status_code} on attempt {attempt + 1}/{max_retries + 1}, "
+                      f"retrying in {delay:.0f}s...")
+                time.sleep(delay)
+                continue
+
+            r.raise_for_status()
+
+        except requests.exceptions.HTTPError as err:
+            try:
+                err_json = r.json()
+                err_msg = err_json.get("error", {}).get("message", str(err))
+                last_error = ValueError(f"Gemini API Error: {err_msg}")
+            except Exception:
+                last_error = ValueError(f"Gemini API Error: {r.text} ({err})")
+            raise last_error
+        except requests.exceptions.Timeout:
+            if attempt < max_retries:
+                delay = base_delay * (2 ** attempt)
+                print(f"[Gemini] Timeout on attempt {attempt + 1}/{max_retries + 1}, "
+                      f"retrying in {delay:.0f}s...")
+                time.sleep(delay)
+                continue
+            raise ValueError("Gemini API Error: Request timed out after multiple retries.")
+
+        # Success — parse response
+        res_data = r.json()
+        try:
+            return res_data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            raise ValueError(f"Unexpected response structure from Gemini API: {res_data}")
+
+    # Should not reach here, but just in case
+    raise last_error or ValueError("Gemini API Error: All retries exhausted.")
+
+
 @app.route("/generate-hook", methods=["POST"])
 def generate_hook():
-    """Meminta AI (Groq Llama 3) untuk membuat hook title singkat berdasarkan video."""
+    """Meminta AI (Gemini) untuk membuat hook title singkat berdasarkan video."""
     data = request.get_json(force=True)
     url = data.get("url")
     api_key = data.get("api_key")
@@ -271,37 +352,16 @@ Setelah membuat 3 kandidat, pilih 1 yang PALING impactful.
 
 BALAS HANYA dengan teks hook final saja (tanpa penjelasan, tanpa nomor, tanpa tanda kutip). Maksimal 6 kata."""
 
-        # 3. Panggil Groq API dengan model yang lebih kuat
-        payload = {
-            "model": "llama-3.3-70b-versatile",  # Model lebih besar = hasil lebih kreatif & akurat
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Kamu adalah ahli viral content. Tugasmu HANYA mengeluarkan hook title singkat, tanpa penjelasan apapun."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.85,   # Sedikit kreatif tapi tetap terkontrol
-            "max_tokens": 40
-        }
+        # 3. Panggil Gemini API
+        messages = [
+            {
+                "role": "system",
+                "content": "Kamu adalah ahli viral content. Tugasmu HANYA mengeluarkan hook title singkat, tanpa penjelasan apapun."
+            },
+            {"role": "user", "content": prompt}
+        ]
         
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=30
-        )
-        
-        if not response.ok:
-            return jsonify({"error": f"Groq API Error: {response.text}"}), response.status_code
-            
-        result = response.json()
-        hook_title = result["choices"][0]["message"]["content"].strip()
+        hook_title = _call_gemini(api_key, messages)
         
         # Bersihkan output AI dari artefak yang tidak diinginkan
         # Hapus tanda kutip, newline berlebih, nomor urut, dll
@@ -325,7 +385,7 @@ BALAS HANYA dengan teks hook final saja (tanpa penjelasan, tanpa nomor, tanpa ta
 
 @app.route("/generate-copy", methods=["POST"])
 def generate_copy():
-    """Meminta AI (Groq Llama 3) untuk membuat copywriting berdasarkan deskripsi & waktu video."""
+    """Meminta AI (Gemini) untuk membuat copywriting berdasarkan deskripsi & waktu video."""
     data = request.get_json(force=True)
     url = data.get("url")
     api_key = data.get("api_key")
@@ -360,7 +420,7 @@ def generate_copy():
             if start_time and end_time:
                 time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan copywriting kamu relevan dengan cuplikan spesifik ini!"
 
-        # 2. Siapkan prompt untuk Llama 3
+        # 2. Siapkan prompt untuk Gemini
         prompt = f"""Kamu adalah Social Media Manager profesional. Buatkan draft copywriting viral untuk TikTok, Instagram Reels, dan YouTube Shorts berdasarkan video berikut:
 Judul: {title}
 Deskripsi: {description}{time_context}
@@ -378,29 +438,13 @@ Format output yang diinginkan:
 🏷️ **HASHTAGS:**
 (5-8 hashtag relevan)"""
 
-        # 3. Panggil Groq API (OpenAI Compatible)
-        # Menggunakan Llama 3 8B yang sangat cepat dan gratis
-        groq_url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "user", "content": prompt}]
-        }
-        
+        # 3. Panggil Gemini API
+        messages = [{"role": "user", "content": prompt}]
         try:
-            r = requests.post(groq_url, headers=headers, json=payload, timeout=30)
-            rd = r.json()
-            if r.status_code == 200:
-                generated_text = rd["choices"][0]["message"]["content"]
-                return jsonify({"copy": generated_text, "title": title})
-            else:
-                err_msg = rd.get("error", {}).get("message", "Unknown error")
-                return jsonify({"error": f"Groq API Error: {err_msg}"}), 400
+            generated_text = _call_gemini(api_key, messages)
+            return jsonify({"copy": generated_text, "title": title})
         except Exception as e:
-            return jsonify({"error": f"API Error: {str(e)}"}), 400
+            return jsonify({"error": f"Gemini API Error: {str(e)}"}), 400
 
     except subprocess.CalledProcessError:
         return jsonify({"error": "Gagal mengambil informasi video. Pastikan URL valid."}), 400
@@ -501,7 +545,7 @@ def detect_moments():
     use_cookies = os.path.isfile(COOKIES_FILE)
 
     if not url: return jsonify({"error": "URL video wajib diisi."}), 400
-    if not api_key: return jsonify({"error": "Groq API Key wajib diisi."}), 400
+    if not api_key: return jsonify({"error": "Gemini API Key wajib diisi."}), 400
 
     try:
         # ── Step 1: Ambil metadata video ────────────────────────────────
@@ -615,32 +659,20 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
   "reason": "(1 kalimat alasan kenapa momen ini viral/kontroversial, berdasarkan isi transcript)"
 }}"""
 
-        # ── Step 4: Panggil Groq AI ──────────────────────────────────────
-        groq_url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        # ── Step 4: Panggil Gemini AI ──────────────────────────────────────
+        messages = [
+            {
+                "role": "system",
+                "content": "Kamu adalah AI Video Editor ahli. Selalu kembalikan JSON yang valid dan PASTIKAN timestamp tidak melebihi durasi video."
+            },
+            {"role": "user", "content": prompt}
+        ]
         
-        # Pilih model: gunakan model lebih besar jika ada transcript (lebih akurat)
-        model = "llama-3.3-70b-versatile" if has_transcript else "llama-3.1-8b-instant"
-        
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Kamu adalah AI Video Editor ahli. Selalu kembalikan JSON yang valid dan PASTIKAN timestamp tidak melebihi durasi video."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.3,  # lebih deterministik, mengurangi halusinasi
-            "max_tokens": 2000,
-        }
-
-        r_ai = requests.post(groq_url, headers=headers, json=payload, timeout=90)
-        r_ai.raise_for_status()
-        rd = r_ai.json()
-        content_ai = rd["choices"][0]["message"]["content"]
-        moments_raw = json.loads(content_ai).get("moments", [])
+        try:
+            content_ai = _call_gemini(api_key, messages, response_json=True)
+            moments_raw = json.loads(content_ai).get("moments", [])
+        except Exception as e:
+            return jsonify({"error": f"Gemini API Error: {str(e)}"}), 500
 
         # ── Step 5: Validasi timestamp ───────────────────────────────────
         moments_valid = []
@@ -673,7 +705,7 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
             "moments":        moments_valid,
             "video_title":    title,
             "has_transcript": has_transcript,
-            "model_used":     model,
+            "model_used":     "gemini-3.5-flash",
         })
 
     except Exception as e:

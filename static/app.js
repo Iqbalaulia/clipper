@@ -334,7 +334,7 @@ if (btnGenerateHook) {
     const apiKey = geminiKeyInput ? geminiKeyInput.value.trim() : '';
 
     if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
-    if (!apiKey) return alert('Groq API Key (di kolom AI Copywriter) wajib diisi untuk fitur ini!');
+    if (!apiKey) return alert('Gemini API Key (di kolom AI Copywriter) wajib diisi untuk fitur ini!');
 
     // Save key
     localStorage.setItem('clipper_gemini_key', apiKey);
@@ -385,7 +385,7 @@ btnGenerateAi.addEventListener('click', async () => {
   const apiKey = geminiKeyInput.value.trim();
 
   if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
-  if (!apiKey) return alert('Groq API Key wajib diisi!');
+  if (!apiKey) return alert('Gemini API Key wajib diisi!');
 
   // Save key
   localStorage.setItem('clipper_gemini_key', apiKey);
@@ -651,7 +651,7 @@ if (btnScan) {
     const cookies    = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
 
     if (!url)    { alert('URL video wajib diisi!'); ctrlUrlInput.focus(); return; }
-    if (!apiKey) { alert('Groq API Key wajib diisi!'); ctrlApiKey.focus(); return; }
+    if (!apiKey) { alert('Gemini API Key wajib diisi!'); ctrlApiKey.focus(); return; }
 
     // Save API key
     localStorage.setItem('clipper_gemini_key', apiKey);
@@ -1065,7 +1065,7 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
 
   if (!apiKey) {
     modalAiSpinner.style.display = 'none';
-    modalTitleHooks.textContent = "Error: Groq API Key belum diisi. Silakan isi di bagian Manual Clip atau Auto Clip.";
+    modalTitleHooks.textContent = "Error: Gemini API Key belum diisi. Silakan isi di bagian Manual Clip atau Auto Clip.";
     modalAiResult.style.display = 'block';
     return;
   }
