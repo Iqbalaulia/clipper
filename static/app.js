@@ -184,8 +184,10 @@ function handleUpdate(data) {
     pending:    '⏳ Menunggu...',
     downloading:'⬇️  Mengunduh video...',
     subtitles:  '💬 Memproses subtitle...',
+    tracking:   '🎯 Melacak wajah pembicara...',
     cutting:    '✂️  Memotong video...',
     embedding:  '🔡 Menyisipkan subtitle...',
+    processing: '⚙️  Memproses video...',
     done:       '✅ Selesai!',
     error:      '❌ Error',
   };

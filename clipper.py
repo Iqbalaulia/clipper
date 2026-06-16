@@ -5,6 +5,7 @@ import threading
 import re
 import sys
 from typing import Dict, Any
+import face_tracker
 
 # Shared progress state across tasks
 _tasks: Dict[str, Any] = {}
@@ -291,6 +292,7 @@ def run_clip(
     output_path      = os.path.join(output_dir, output_filename)
     temp_cut_path    = os.path.join(output_dir, f"_tmpcut_{task_id}.mp4")
     temp_hook_sub_path = os.path.join(output_dir, f"_hook_{task_id}.srt")
+    temp_tracking_cut  = os.path.join(output_dir, f"_trackcut_{task_id}.mp4")
 
     try:
         # ── Step 1: Download video (+ optionally subtitles) ─────────────────
@@ -500,6 +502,86 @@ def run_clip(
                 _append_log(task_id, "[!] Subtitle tidak ditemukan — lanjut tanpa subtitle.")
                 subtitle_enabled = False
 
+        # ── Step 2b: Speaker Tracking (if vertical-speaker) ────────────────
+        speaker_crop_filter = None
+        if video_format == "vertical-speaker":
+            _update_task(task_id, status="tracking", progress=55)
+            _append_log(task_id, "[TRACK] 🎯 Memulai analisis wajah untuk Speaker Tracking...")
+
+            # First, cut the relevant segment for analysis (fast cut)
+            start_sec = _parse_seconds(start)
+            try:
+                duration = _parse_seconds(end) - start_sec
+                duration_ff = str(max(duration, 1.0))
+            except Exception:
+                duration_ff = _seconds_to_ffmpeg(end)
+
+            tracking_cut_cmd = [
+                "ffmpeg", "-y",
+                "-ss", _seconds_to_ffmpeg(start),
+                "-i", downloaded_file,
+                "-t", duration_ff,
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                temp_tracking_cut,
+            ]
+            _append_log(task_id, "[TRACK] Memotong segmen untuk analisis...")
+            _run_ffmpeg(task_id, tracking_cut_cmd, start=55, end=58)
+
+            if os.path.isfile(temp_tracking_cut):
+                # Get video dimensions
+                vid_w, vid_h, vid_fps = face_tracker.get_video_dimensions(temp_tracking_cut)
+
+                if vid_w > 0 and vid_h > 0:
+                    # Analyze faces
+                    _update_task(task_id, progress=60)
+                    face_data = face_tracker.analyze_faces(
+                        temp_tracking_cut,
+                        sample_fps=3.0,
+                        log_fn=lambda msg: _append_log(task_id, msg),
+                    )
+
+                    faces_detected = sum(
+                        1 for f in face_data if f.get("center_x") is not None
+                    )
+
+                    if faces_detected > 0:
+                        # Generate crop data
+                        _update_task(task_id, progress=70)
+                        crop_data = face_tracker.generate_crop_data(
+                            face_data,
+                            vid_w,
+                            vid_h,
+                            target_ratio=9.0 / 16.0,
+                            smoothing=0.12,
+                            log_fn=lambda msg: _append_log(task_id, msg),
+                        )
+
+                        # Build crop filter string
+                        speaker_crop_filter = face_tracker.build_crop_filter_string(
+                            crop_data, vid_w, vid_h
+                        )
+                        _append_log(
+                            task_id,
+                            f"[TRACK] ✅ Speaker tracking siap! "
+                            f"{faces_detected}/{len(face_data)} frame dengan wajah terdeteksi.",
+                        )
+                    else:
+                        _append_log(
+                            task_id,
+                            "[TRACK] ⚠️ Tidak ada wajah terdeteksi — menggunakan center crop.",
+                        )
+                else:
+                    _append_log(
+                        task_id,
+                        "[TRACK] ⚠️ Gagal membaca dimensi video — menggunakan center crop.",
+                    )
+            else:
+                _append_log(
+                    task_id,
+                    "[TRACK] ⚠️ Gagal memotong segmen untuk analisis — menggunakan center crop.",
+                )
+
         _update_task(task_id, status="processing", progress=76)
 
         start_sec = _parse_seconds(start)
@@ -627,6 +709,14 @@ def run_clip(
                     "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
                 )
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background)")
+            elif video_format == "vertical-speaker":
+                if speaker_crop_filter:
+                    vf_filters.append(speaker_crop_filter)
+                    _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (🎯 Speaker Tracking)")
+                else:
+                    # Fallback to center crop when tracking failed
+                    vf_filters.append("crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'")
+                    _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Center Crop — fallback)")
 
             if has_sub_file and subtitle_type == "burn":
                 # Build safe path for FFmpeg subtitles filter on Windows
@@ -792,6 +882,7 @@ def run_clip(
             temp_cut_path,          # _tmpcut_{task_id}.mp4
             shifted_sub_path,       # _sub_{task_id}.srt  (shifted subtitle)
             temp_hook_sub_path,     # _hook_{task_id}.srt
+            temp_tracking_cut,      # _trackcut_{task_id}.mp4  (speaker tracking analysis)
         ]
         # Also delete the task-specific subtitle download (sub_file_path if it's task-specific)
         if sub_file_path and os.path.basename(sub_file_path).startswith(f"_sub_dl_{task_id}"):
