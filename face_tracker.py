@@ -10,6 +10,7 @@ import os
 import re
 import math
 import tempfile
+import urllib.request
 from typing import List, Tuple, Optional, Callable
 
 
@@ -42,6 +43,8 @@ def analyze_faces(
     """
     import cv2
     import mediapipe as mp
+    from mediapipe.tasks import python
+    from mediapipe.tasks.python import vision
 
     if not os.path.isfile(video_path):
         if log_fn:
@@ -65,6 +68,19 @@ def analyze_faces(
             log_fn("[TRACK] Resolusi video tidak valid.")
         return []
 
+    # Prepare model
+    model_path = os.path.join(os.path.dirname(__file__), 'blaze_face_short_range.tflite')
+    if not os.path.exists(model_path):
+        if log_fn:
+            log_fn("[TRACK] Mengunduh model pendeteksi wajah...")
+        url = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
+        try:
+            urllib.request.urlretrieve(url, model_path)
+        except Exception as e:
+            if log_fn:
+                log_fn(f"[TRACK] Gagal mengunduh model: {e}")
+            return []
+
     # Calculate frame skip interval
     frame_interval = max(1, int(video_fps / sample_fps))
     total_to_analyze = total_frames // frame_interval if total_frames > 0 else 0
@@ -80,76 +96,79 @@ def analyze_faces(
     analyzed_count = 0
     faces_found_count = 0
 
-    mp_face = mp.solutions.face_detection
-    with mp_face.FaceDetection(
-        model_selection=1,  # 1 = full range model (works for faces 2-5m away)
-        min_detection_confidence=min_detection_confidence,
-    ) as face_detection:
+    base_options = python.BaseOptions(model_asset_path=model_path)
+    options = vision.FaceDetectorOptions(
+        base_options=base_options,
+        min_detection_confidence=min_detection_confidence
+    )
+    detector = vision.FaceDetector.create_from_options(options)
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-            if frame_idx % frame_interval == 0:
-                timestamp = frame_idx / video_fps
+        if frame_idx % frame_interval == 0:
+            timestamp = frame_idx / video_fps
 
-                # Convert BGR to RGB for MediaPipe
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = face_detection.process(rgb_frame)
+            # Convert BGR to RGB for MediaPipe
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            results = detector.detect(mp_image)
 
-                if results.detections:
-                    # Pick the largest face (by bounding box area)
-                    best_face = max(
-                        results.detections,
-                        key=lambda d: (
-                            d.location_data.relative_bounding_box.width
-                            * d.location_data.relative_bounding_box.height
-                        ),
-                    )
+            if results.detections:
+                # Pick the largest face (by bounding box area)
+                best_face = max(
+                    results.detections,
+                    key=lambda d: d.bounding_box.width * d.bounding_box.height
+                )
 
-                    bbox = best_face.location_data.relative_bounding_box
-                    cx = bbox.xmin + bbox.width / 2.0
-                    cy = bbox.ymin + bbox.height / 2.0
+                bbox = best_face.bounding_box
+                
+                # Convert from pixel coords to normalized (0.0-1.0)
+                norm_w = bbox.width / video_width
+                norm_h = bbox.height / video_height
+                cx = (bbox.origin_x + bbox.width / 2.0) / video_width
+                cy = (bbox.origin_y + bbox.height / 2.0) / video_height
 
-                    # Clamp to valid range
-                    cx = max(0.0, min(1.0, cx))
-                    cy = max(0.0, min(1.0, cy))
+                # Clamp to valid range
+                cx = max(0.0, min(1.0, cx))
+                cy = max(0.0, min(1.0, cy))
 
-                    face_data.append(
-                        {
-                            "timestamp": timestamp,
-                            "center_x": cx,
-                            "center_y": cy,
-                            "width": bbox.width,
-                            "height": bbox.height,
-                        }
-                    )
-                    faces_found_count += 1
-                else:
-                    # No face detected at this timestamp — append None marker
-                    face_data.append(
-                        {
-                            "timestamp": timestamp,
-                            "center_x": None,
-                            "center_y": None,
-                            "width": 0,
-                            "height": 0,
-                        }
-                    )
+                face_data.append(
+                    {
+                        "timestamp": timestamp,
+                        "center_x": cx,
+                        "center_y": cy,
+                        "width": norm_w,
+                        "height": norm_h,
+                    }
+                )
+                faces_found_count += 1
+            else:
+                # No face detected at this timestamp — append None marker
+                face_data.append(
+                    {
+                        "timestamp": timestamp,
+                        "center_x": None,
+                        "center_y": None,
+                        "width": 0,
+                        "height": 0,
+                    }
+                )
 
-                analyzed_count += 1
+            analyzed_count += 1
 
-                # Progress logging every ~30 analyzed frames
-                if log_fn and analyzed_count % 30 == 0 and total_to_analyze > 0:
-                    pct = min(100, int(analyzed_count / total_to_analyze * 100))
-                    log_fn(
-                        f"[TRACK] Analisis wajah: {pct}% "
-                        f"({analyzed_count}/{total_to_analyze} frame, "
-                        f"{faces_found_count} wajah terdeteksi)"
-                    )
+            # Progress logging every ~30 analyzed frames
+            if log_fn and analyzed_count % 30 == 0 and total_to_analyze > 0:
+                pct = min(100, int(analyzed_count / total_to_analyze * 100))
+                log_fn(
+                    f"[TRACK] Analisis wajah: {pct}% "
+                    f"({analyzed_count}/{total_to_analyze} frame, "
+                    f"{faces_found_count} wajah terdeteksi)"
+                )
 
-            frame_idx += 1
+        frame_idx += 1
 
     cap.release()
 
@@ -384,8 +403,8 @@ def build_crop_filter_string(
     crop_w = crop_data[0]["crop_w"]
     crop_h = crop_data[0]["crop_h"]
 
-    # Reduce keyframes to manageable set (max ~100 keyframes for expression length)
-    reduced = _reduce_keyframes(crop_data, max_keyframes=120)
+    # Reduce keyframes to manageable set (max ~40 keyframes for expression length to prevent FFmpeg -22 Invalid argument error)
+    reduced = _reduce_keyframes(crop_data, max_keyframes=40)
 
     if len(reduced) <= 1:
         crop_x = reduced[0]["crop_x"] if reduced else (video_width - crop_w) // 2
@@ -399,7 +418,7 @@ def build_crop_filter_string(
 
 
 def _reduce_keyframes(
-    crop_data: List[dict], max_keyframes: int = 120
+    crop_data: List[dict], max_keyframes: int = 40
 ) -> List[dict]:
     """Reduce number of keyframes by sampling evenly."""
     n = len(crop_data)
@@ -456,4 +475,4 @@ def _build_lerp_expression(keyframes: List[dict]) -> str:
 
         expr = f"if(lt(t,{t1:.3f}),{segment},{expr})"
 
-    return expr
+    return expr.replace(",", "\\,")
