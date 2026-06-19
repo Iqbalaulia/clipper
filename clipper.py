@@ -76,6 +76,193 @@ def _parse_seconds(ts: str) -> float:
     raise ValueError(f"Format waktu tidak dikenal: {ts}")
 
 
+# ── Sentence-aware helpers ─────────────────────────────────────────────────
+
+# Punctuation marks that typically end a sentence in Indonesian / English.
+# Includes: . ? ! … । and the Arabic question mark ؟
+_SENTENCE_END_RE = re.compile(r'[.?!…।؟]+\s*$')
+
+
+def _segment_sentences(segments: list) -> list:
+    """
+    Merge consecutive subtitle entries into full sentences.
+
+    A subtitle block may split a single sentence across multiple entries.
+    This function groups entries until it finds an end-of-sentence punctuation
+    mark, then starts a new sentence.
+
+    Returns a list of dicts: {start, end, text} where each item is one sentence.
+    """
+    if not segments:
+        return []
+
+    sentences = []
+    current = None
+
+    for seg in segments:
+        seg_start = seg.get("start", "")
+        seg_end = seg.get("end", "")
+        seg_text = (seg.get("text") or "").strip()
+        if not seg_text:
+            continue
+
+        if current is None:
+            current = {"start": seg_start, "end": seg_end, "text": seg_text}
+        else:
+            current["end"] = seg_end
+            # Insert a space when concatenating, but avoid double spaces.
+            if current["text"].endswith("-"):
+                current["text"] = current["text"][:-1] + seg_text
+            else:
+                current["text"] = (current["text"] + " " + seg_text).strip()
+
+        # If the accumulated text ends with sentence-final punctuation,
+        # close the current sentence.
+        if _SENTENCE_END_RE.search(current["text"]):
+            sentences.append(current)
+            current = None
+
+    # Append any trailing fragment as its own sentence.
+    if current is not None:
+        sentences.append(current)
+
+    return sentences
+
+
+def _seconds_from_ts(ts: str) -> float:
+    """Convert HH:MM:SS or MM:SS timestamp to seconds."""
+    ts = ts.strip()
+    parts = ts.split(":")
+    parts = [float(p) for p in parts]
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    if len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    if len(parts) == 1:
+        return parts[0]
+    return 0.0
+
+
+def _seconds_to_hhmmss(seconds: float) -> str:
+    """Convert seconds to HH:MM:SS string."""
+    s = max(0, int(seconds))
+    return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
+
+
+def _parse_srt(srt_text: str) -> list:
+    """
+    Parse raw SRT content into list of {start, end, text} dicts.
+    Lightweight local parser to avoid circular imports with app.py.
+    """
+    clean = re.sub(r'<[^>]+>', '', srt_text)
+    blocks = re.split(r'\n\s*\n', clean.strip())
+    segments = []
+    time_pattern = re.compile(
+        r'(\d{2}:\d{2}:\d{2})[,.]\d{3}\s*-->\s*(\d{2}:\d{2}:\d{2})[,.]\d{3}'
+    )
+    for block in blocks:
+        lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
+        if len(lines) < 2:
+            continue
+        ts_line = None
+        text_lines = []
+        for line in lines:
+            if time_pattern.match(line):
+                ts_line = line
+            elif ts_line and not line.isdigit():
+                text_lines.append(line)
+        if not ts_line or not text_lines:
+            continue
+        m = time_pattern.match(ts_line)
+        if not m:
+            continue
+        text = ' '.join(text_lines).strip()
+        if not text:
+            continue
+        segments.append({"start": m.group(1), "end": m.group(2), "text": text})
+    return segments
+
+
+def _snap_to_sentence_boundaries(
+    segments: list,
+    start_sec: float,
+    end_sec: float,
+    duration_secs: float | None = None,
+    min_duration: float = 15.0,
+    max_duration: float = 180.0,
+) -> tuple[float, float]:
+    """
+    Snap start/end timestamps to the nearest sentence boundaries.
+
+    Rules:
+      - If start falls inside a sentence, move it to the beginning of that
+        sentence so the clip starts with full context.
+      - If end falls inside a sentence, extend it to the end of that sentence
+        so the clip finishes the thought.
+      - Clamp result to [0, duration_secs] if provided.
+      - Keep result within [min_duration, max_duration]. If snapping pushes
+        the clip outside these bounds, fall back to the original timestamps
+        clamped to valid limits.
+
+    Returns (snapped_start, snapped_end).
+    """
+    if not segments:
+        return start_sec, end_sec
+
+    sentences = _segment_sentences(segments)
+    if not sentences:
+        return start_sec, end_sec
+
+    original_start, original_end = start_sec, end_sec
+
+    # Snap start: find the sentence that contains start_sec and move to its start.
+    snapped_start = start_sec
+    for sent in sentences:
+        s = _seconds_from_ts(sent["start"])
+        e = _seconds_from_ts(sent["end"])
+        if s <= start_sec <= e:
+            snapped_start = s
+            break
+    else:
+        # start_sec is after the last sentence -> keep as-is.
+        snapped_start = start_sec
+
+    # Snap end: find the sentence that contains end_sec and move to its end.
+    snapped_end = end_sec
+    for sent in sentences:
+        s = _seconds_from_ts(sent["start"])
+        e = _seconds_from_ts(sent["end"])
+        if s <= end_sec <= e:
+            snapped_end = e
+            break
+    else:
+        snapped_end = end_sec
+
+    # Clamp to video duration.
+    if duration_secs is not None:
+        snapped_start = max(0.0, min(snapped_start, duration_secs))
+        snapped_end = max(0.0, min(snapped_end, duration_secs))
+
+    # Ensure end > start.
+    if snapped_end <= snapped_start:
+        snapped_end = min(snapped_start + 60.0, duration_secs if duration_secs else snapped_start + 60.0)
+
+    duration = snapped_end - snapped_start
+
+    # If snapping produced an unreasonably short or long clip, fall back to
+    # the original timestamps (clamped). This protects against malformed data
+    # while still allowing sentence-aware expansion when it makes sense.
+    if duration < min_duration or duration > max_duration:
+        snapped_start = max(0.0, original_start)
+        snapped_end = original_end
+        if duration_secs is not None:
+            snapped_end = min(snapped_end, duration_secs)
+        if snapped_end <= snapped_start:
+            snapped_end = min(snapped_start + 60.0, duration_secs if duration_secs else snapped_start + 60.0)
+
+    return snapped_start, snapped_end
+
+
 def _find_subtitle_file(output_dir: str, task_id: str, lang: str, video_id: str = "") -> str | None:
     """
     Find a subtitle file for this specific task/video.
@@ -481,6 +668,38 @@ def run_clip(
 
             if subtitle_file:
                 _append_log(task_id, f"[CC] Ditemukan: {os.path.basename(subtitle_file)}")
+
+                # ── Sentence-aware boundary snapping ─────────────────────────
+                # Try to snap the requested start/end to full sentence boundaries
+                # so the clip contains complete context instead of cutting
+                # mid-sentence.
+                try:
+                    with open(subtitle_file, "r", encoding="utf-8", errors="replace") as sfh:
+                        raw_srt = sfh.read()
+                    snap_segments = _parse_srt(raw_srt)
+                    # We intentionally do not clamp to the original end time here:
+                    # sentence snapping may need to extend slightly beyond the
+                    # requested end to finish the current sentence. FFmpeg will
+                    # stop at EOF if the result exceeds the video.
+                    snapped_start, snapped_end = _snap_to_sentence_boundaries(
+                        snap_segments,
+                        _parse_seconds(start),
+                        _parse_seconds(end),
+                        duration_secs=None,
+                        min_duration=1.0,
+                        max_duration=float('inf'),
+                    )
+                    if abs(snapped_start - _parse_seconds(start)) > 0.5 or abs(snapped_end - _parse_seconds(end)) > 0.5:
+                        _append_log(
+                            task_id,
+                            f"[CONTEXT] Menyesuaikan batas clip ke batas kalimat: "
+                            f"{start}-{end} -> {_seconds_to_hhmmss(snapped_start)}-{_seconds_to_hhmmss(snapped_end)}"
+                        )
+                        start = _seconds_to_hhmmss(snapped_start)
+                        end = _seconds_to_hhmmss(snapped_end)
+                except Exception as e:
+                    _append_log(task_id, f"[CONTEXT] Gagal snap ke batas kalimat: {e}")
+
                 # Shift subtitle timestamps to match clip start
                 shifted_sub_path = os.path.join(output_dir, f"_sub_{task_id}.srt")
                 start_sec = _parse_seconds(start)

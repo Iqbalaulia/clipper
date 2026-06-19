@@ -216,11 +216,13 @@ def _sse(data: dict) -> str:
 
 
 def _call_gemini(api_key: str, messages: list, response_json: bool = False,
-                  max_retries: int = 3, base_delay: float = 2.0) -> str:
+                  max_retries: int = 3, base_delay: float = 2.0,
+                  model_name: str | None = None) -> tuple[str, str]:
     """Helper to call Gemini API via native REST endpoint.
-    
+
     Automatically retries on transient errors (429, 500, 502, 503, 504)
-    with exponential backoff.
+    with exponential backoff. If a model is not found (404), falls back
+    to the next candidate in the fallback list.
     """
     system_instruction = ""
     contents = []
@@ -235,7 +237,7 @@ def _call_gemini(api_key: str, messages: list, response_json: bool = False,
                 "role": gemini_role,
                 "parts": [{"text": content}]
             })
-            
+
     payload = {
         "contents": contents
     }
@@ -243,57 +245,87 @@ def _call_gemini(api_key: str, messages: list, response_json: bool = False,
         payload["systemInstruction"] = {
             "parts": [{"text": system_instruction}]
         }
-        
+
     config = {}
     if response_json:
         config["responseMimeType"] = "application/json"
     if config:
         payload["generationConfig"] = config
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+    # Model candidates in preference order. Different API keys / regions may
+    # support different names, so we try the latest stable ones first and
+    # fall back to aliases / legacy names on 404.
+    env_model = (os.environ.get("GEMINI_MODEL") or "").strip()
+    if model_name:
+        candidate_models = [model_name]
+    elif env_model:
+        candidate_models = [env_model]
+    else:
+        candidate_models = [
+            "gemini-2.5-flash",
+            "gemini-1.5-flash",
+            "gemini-flash-latest",
+            "gemini-1.5-pro",
+        ]
 
+    api_version = os.environ.get("GEMINI_API_VERSION", "v1beta").strip()
     RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
     last_error = None
 
-    for attempt in range(max_retries + 1):
-        try:
-            r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=90)
+    for model in candidate_models:
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:generateContent?key={api_key}"
 
-            if r.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
-                delay = base_delay * (2 ** attempt)  # 2s, 4s, 8s
-                print(f"[Gemini] {r.status_code} on attempt {attempt + 1}/{max_retries + 1}, "
-                      f"retrying in {delay:.0f}s...")
-                time.sleep(delay)
-                continue
-
-            r.raise_for_status()
-
-        except requests.exceptions.HTTPError as err:
+        for attempt in range(max_retries + 1):
             try:
-                err_json = r.json()
-                err_msg = err_json.get("error", {}).get("message", str(err))
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=90)
+
+                # 404 means model not found / not supported -> try next model immediately.
+                if r.status_code == 404:
+                    try:
+                        err_json = r.json()
+                        err_msg = err_json.get("error", {}).get("message", "")
+                    except Exception:
+                        err_msg = r.text
+                    print(f"[Gemini] Model '{model}' not found ({r.status_code}): {err_msg}. Trying fallback...")
+                    last_error = ValueError(f"Gemini API Error: {err_msg}")
+                    break
+
+                if r.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)  # 2s, 4s, 8s
+                    print(f"[Gemini] {r.status_code} on attempt {attempt + 1}/{max_retries + 1}, "
+                          f"retrying in {delay:.0f}s...")
+                    time.sleep(delay)
+                    continue
+
+                r.raise_for_status()
+
+            except requests.exceptions.HTTPError as err:
+                try:
+                    err_json = r.json()
+                    err_msg = err_json.get("error", {}).get("message", str(err))
+                except Exception:
+                    err_msg = f"{r.text} ({err})"
                 last_error = ValueError(f"Gemini API Error: {err_msg}")
-            except Exception:
-                last_error = ValueError(f"Gemini API Error: {r.text} ({err})")
-            raise last_error
-        except requests.exceptions.Timeout:
-            if attempt < max_retries:
-                delay = base_delay * (2 ** attempt)
-                print(f"[Gemini] Timeout on attempt {attempt + 1}/{max_retries + 1}, "
-                      f"retrying in {delay:.0f}s...")
-                time.sleep(delay)
-                continue
-            raise ValueError("Gemini API Error: Request timed out after multiple retries.")
+                raise last_error
+            except requests.exceptions.Timeout:
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"[Gemini] Timeout on attempt {attempt + 1}/{max_retries + 1}, "
+                          f"retrying in {delay:.0f}s...")
+                    time.sleep(delay)
+                    continue
+                raise ValueError("Gemini API Error: Request timed out after multiple retries.")
 
-        # Success — parse response
-        res_data = r.json()
-        try:
-            return res_data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError):
-            raise ValueError(f"Unexpected response structure from Gemini API: {res_data}")
+            # Success — parse response
+            res_data = r.json()
+            try:
+                text = res_data["candidates"][0]["content"]["parts"][0]["text"]
+                return text, model
+            except (KeyError, IndexError):
+                raise ValueError(f"Unexpected response structure from Gemini API: {res_data}")
 
-    # Should not reach here, but just in case
-    raise last_error or ValueError("Gemini API Error: All retries exhausted.")
+    # All models exhausted
+    raise last_error or ValueError("Gemini API Error: All model candidates failed.")
 
 
 @app.route("/generate-hook", methods=["POST"])
@@ -361,7 +393,7 @@ BALAS HANYA dengan teks hook final saja (tanpa penjelasan, tanpa nomor, tanpa ta
             {"role": "user", "content": prompt}
         ]
         
-        hook_title = _call_gemini(api_key, messages)
+        hook_title, _ = _call_gemini(api_key, messages)
         
         # Bersihkan output AI dari artefak yang tidak diinginkan
         # Hapus tanda kutip, newline berlebih, nomor urut, dll
@@ -441,7 +473,7 @@ Format output yang diinginkan:
         # 3. Panggil Gemini API
         messages = [{"role": "user", "content": prompt}]
         try:
-            generated_text = _call_gemini(api_key, messages)
+            generated_text, _ = _call_gemini(api_key, messages)
             return jsonify({"copy": generated_text, "title": title})
         except Exception as e:
             return jsonify({"error": f"Gemini API Error: {str(e)}"}), 400
@@ -508,16 +540,22 @@ def parse_srt_to_segments(srt_text):
     return segments
 
 
-def format_transcript_for_ai(segments, max_chars=12000):
+def format_transcript_for_ai(segments, max_chars=None):
     """
     Format segments into a clean readable transcript for AI consumption.
     Format: [HH:MM:SS] text
+
+    Args:
+        segments: list of dicts with 'start', 'end', 'text'
+        max_chars: optional hard limit. None means use all available transcript.
+                   Gemini 1.5 Flash has a very large context window, so truncating
+                   at 12k characters was artificially hurting long-video analysis.
     """
     lines = []
     total = 0
     for seg in segments:
         line = f"[{seg['start']}] {seg['text']}"
-        if total + len(line) > max_chars:
+        if max_chars is not None and total + len(line) > max_chars:
             break
         lines.append(line)
         total += len(line)
@@ -644,11 +682,13 @@ INFORMASI VIDEO:
 
 TUGAS:
 Temukan tepat {num_moments} momen terbaik yang:
-1. Memiliki potensi viral tinggi (konflik, fakta mengejutkan, momen lucu, pernyataan kontroversial, dll)
+1. Memiliki potensi viral tinggi (konflik, fakta mengejutkan, momen lucu, pernyataan kontroversial, plot twist, dll)
 2. Berdurasi antara 30 detik hingga 3 menit per klip
 3. Timestamp START dan END HARUS akurat berdasarkan {ai_basis}
 4. Timestamp END TIDAK BOLEH melebihi {duration_str}
 5. START dan END HARUS dalam format HH:MM:SS
+6. Setiap klip HARUS berupa 1 konteks penuh: jangan potong di tengah kalimat. Pilih START di awal kalimat dan END di akhir kalimat yang masuk akal. Jika perlu, perpanjang sedikit agar kalimat terakhir selesai.
+7. Jika momen berisi percakapan, pastikan klip berakhir setelah penutup/pernyataan penting, bukan di tengah jawaban.
 
 RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing-masing:
 {{
@@ -656,8 +696,26 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
   "start": "HH:MM:SS",
   "end": "HH:MM:SS",
   "title": "(HOOK TITLE VIRAL: Maksimal 5 kata, HURUF KAPITAL SEMUA, memicu FOMO/penasaran ekstrem. Contoh: KETAHUAN! DIA BOHONG SELAMA INI, FAKTA GILA YANG DISEMBUNYIKAN!)",
-  "reason": "(1 kalimat alasan kenapa momen ini viral/kontroversial, berdasarkan isi transcript)"
-}}"""
+  "reason": "(1 kalimat alasan kenapa momen ini viral/kontroversial, berdasarkan isi transcript)",
+  "confidence": (angka 1-10 yang menunjukkan seberapa yakin kamu momen ini viral)
+}}
+
+Contoh few-shot yang benar:
+Momen 1:
+- start: "00:02:15"
+- end: "00:02:52"
+- title: "DIA NGOMONG INI?!"
+- reason: "Pernyataan kontroversial pembicara utama membuat lawan bicara terdiam sejenak."
+- confidence: 9
+
+Momen 2:
+- start: "00:05:40"
+- end: "00:06:08"
+- title: "FAKTA MENGEJUTKAN TERBONGKAR"
+- reason: "Data yang disebutkan bertentangan dengan klaim sebelumnya dan menciptakan plot twist."
+- confidence: 8
+
+PENTING: Jika tidak yakin dengan timestamp akurat, preferensi berikan batas awal/akhir kalimat yang aman. Jangan tebak timestamp di tengah dialog."""
 
         # ── Step 4: Panggil Gemini AI ──────────────────────────────────────
         messages = [
@@ -669,7 +727,7 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
         ]
         
         try:
-            content_ai = _call_gemini(api_key, messages, response_json=True)
+            content_ai, model_used = _call_gemini(api_key, messages, response_json=True)
             moments_raw = json.loads(content_ai).get("moments", [])
         except Exception as e:
             return jsonify({"error": f"Gemini API Error: {str(e)}"}), 500
@@ -688,6 +746,16 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
             if end_s <= start_s:
                 end_s = min(start_s + 60, duration_secs if duration_secs > 0 else start_s + 60)
 
+            # Snap ke batas kalimat agar setiap clip berisi 1 konteks penuh.
+            if has_transcript and segments:
+                try:
+                    snapped_start, snapped_end = clipper._snap_to_sentence_boundaries(
+                        segments, start_s, end_s, duration_secs=duration_secs
+                    )
+                    start_s, end_s = snapped_start, snapped_end
+                except Exception:
+                    pass
+
             # Konversi balik ke HH:MM:SS
             def secs_to_ts(s):
                 s = max(0, int(s))
@@ -699,13 +767,14 @@ RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing
                 "end":    secs_to_ts(end_s),
                 "title":  str(m.get("title", f"Momen {len(moments_valid)+1}")).upper(),
                 "reason": str(m.get("reason", m.get("description", ""))),
+                "confidence": int(m.get("confidence", 0)) if isinstance(m.get("confidence"), (int, float)) else 0,
             })
 
         return jsonify({
             "moments":        moments_valid,
             "video_title":    title,
             "has_transcript": has_transcript,
-            "model_used":     "gemini-3.5-flash",
+            "model_used":     model_used if model_used else "gemini-1.5-flash",
         })
 
     except Exception as e:
