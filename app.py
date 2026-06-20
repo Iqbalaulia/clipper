@@ -683,7 +683,7 @@ INFORMASI VIDEO:
 TUGAS:
 Temukan tepat {num_moments} momen terbaik yang:
 1. Memiliki potensi viral tinggi (konflik, fakta mengejutkan, momen lucu, pernyataan kontroversial, plot twist, dll)
-2. Berdurasi antara 30 detik hingga 3 menit per klip
+2. Berdurasi antara 30 detik hingga 90 detik per klip
 3. Timestamp START dan END HARUS akurat berdasarkan {ai_basis}
 4. Timestamp END TIDAK BOLEH melebihi {duration_str}
 5. START dan END HARUS dalam format HH:MM:SS
