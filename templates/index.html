@@ -3,244 +3,647 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Clipper — Potong Video Lokal</title>
-  <meta name="description" content="Aplikasi lokal untuk mengunduh dan memotong video dari YouTube dan platform lainnya menggunakan yt-dlp dan FFmpeg." />
+  <title>Clipper Studio — Video Editor Dashboard</title>
+  <meta name="description" content="Dashboard profesional untuk mengunduh, memotong, dan mengedit video dari YouTube dan platform lainnya." />
   <link rel="stylesheet" href="/static/style.css" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✂️</text></svg>" />
 </head>
 <body>
 
-<!-- Background atmosphere -->
-<div class="bg-atmosphere">
-  <div class="bg-orb bg-orb-1"></div>
-  <div class="bg-orb bg-orb-2"></div>
-  <div class="bg-orb bg-orb-3"></div>
-</div>
+<div class="dashboard">
 
-<div class="app-wrapper">
-
-  <!-- ── Header ── -->
-  <header class="app-header">
-    <div class="logo-wrap">
-      <div class="logo-icon">✂️</div>
-      <span class="logo-text">Clipper</span>
+  <!-- ═══ LEFT SIDEBAR ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo-icon">✂️</div>
+      <div>
+        <div class="sidebar-logo-text">Clipper</div>
+        <div class="sidebar-version">Studio v2.0</div>
+      </div>
     </div>
-    <p class="app-subtitle">Unduh &amp; potong video dari YouTube dan platform lainnya — lokal, cepat, tanpa batas.</p>
 
-    <!-- Dependency status badges -->
-    <div class="dep-banner">
-      <span class="dep-badge" id="dep-ytdlp">
-        <span class="dot"></span>
-        <span class="dep-label">yt-dlp: memeriksa…</span>
-      </span>
-      <span class="dep-badge" id="dep-ffmpeg">
-        <span class="dot"></span>
-        <span class="dep-label">FFmpeg: memeriksa…</span>
-      </span>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Tools</div>
+      <div class="nav-item active" id="nav-auto-clip" data-target="tab-auto-clip">
+        <span class="nav-item-icon">🔥</span>
+        Auto-Clip AI
+        <span class="nav-item-badge">AI</span>
+      </div>
+      <div class="nav-item" id="nav-manual-clip" data-target="tab-manual-clip">
+        <span class="nav-item-icon">✂️</span>
+        Manual Clip
+      </div>
+
+      <div class="nav-section-label">Settings</div>
+      <div class="nav-item" id="nav-cookies" data-target="tab-cookies">
+        <span class="nav-item-icon">🍪</span>
+        Cookies / Bypass
+      </div>
+
+      <div class="nav-section-label">Info</div>
+      <div class="nav-item" id="nav-tips" data-target="tab-tips">
+        <span class="nav-item-icon">💡</span>
+        Tips & Bantuan
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <p>Dibuat dengan ❤️ menggunakan<br><strong>yt-dlp</strong> & <strong>FFmpeg</strong></p>
+    </div>
+  </aside>
+
+  <!-- ═══ TOP BAR ═══ -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">
+        <div class="topbar-logo-icon">✂️</div>
+        <span class="topbar-logo-text">Clipper Studio</span>
+      </div>
+      <div class="topbar-divider"></div>
+      <span style="font-size:.78rem; color:var(--text-muted);">Video Editor Dashboard</span>
+    </div>
+    <div class="topbar-right">
+      <div class="dep-banner">
+        <span class="dep-badge" id="dep-ytdlp">
+          <span class="dot"></span>
+          <span class="dep-label">yt-dlp: memeriksa…</span>
+        </span>
+        <span class="dep-badge" id="dep-ffmpeg">
+          <span class="dot"></span>
+          <span class="dep-label">FFmpeg: memeriksa…</span>
+        </span>
+      </div>
     </div>
   </header>
 
-  <!-- ── Auto-Clip + Main Forms ── -->
-  <main>
+  <!-- ═══ MAIN WORKSPACE (CENTER) ═══ -->
+  <section class="workspace-main">
 
-    <!-- Controversial Moments Card -->
-    <div class="card controversial-card" id="controversial-card">
-      <!-- Header / Toggle -->
-      <div class="controversial-header" id="controversial-toggle">
-        <div class="controversial-title-row">
-          <div class="controversial-icon-wrap">🔥</div>
-          <div>
-            <p class="controversial-label">Auto-Clip Momen Kontroversial</p>
-            <p class="controversial-sublabel">Scan video dengan AI — deteksi &amp; potong momen paling menarik secara otomatis</p>
-          </div>
-        </div>
-        <div class="controversial-badge-row">
-          <span class="badge-ai">✨ AI Powered</span>
-          <span class="controversial-chevron" id="controversial-chevron">▼</span>
-        </div>
+    <!-- Video Preview Area -->
+    <div class="video-preview-area" id="video-preview-area">
+      <!-- Placeholder shown initially -->
+      <div class="video-preview-placeholder" id="video-placeholder">
+        <div class="preview-placeholder-icon">🎬</div>
+        <p class="preview-placeholder-text">Masukkan URL video dan mulai scan atau potong untuk melihat preview di sini</p>
+        <p class="preview-placeholder-hint">Support: YouTube, TikTok, Instagram, Twitter, dan 1000+ situs lainnya</p>
       </div>
 
-      <!-- Collapsible Body -->
-      <div class="controversial-body" id="controversial-body">
-        <div class="controversial-divider"></div>
+      <!-- Actual video player (hidden until clip is ready) -->
+      <div class="workspace-video-wrap" id="workspace-video-wrap">
+        <video id="workspace-video-player" controls preload="metadata"></video>
+      </div>
 
-        <!-- Inputs Row -->
-        <div class="controversial-inputs">
-          <!-- URL Input -->
-          <div class="field" style="flex: 2; min-width: 220px;">
-            <label for="ctrl-url">URL Video <span>*</span></label>
-            <div class="input-wrap">
-              <span class="input-icon">🔗</span>
-              <input id="ctrl-url" type="text" class="url-input" placeholder="https://www.youtube.com/watch?v=..." />
-            </div>
-          </div>
-
-          <!-- Jumlah Momen -->
-          <div class="field" style="flex: 0 0 140px; min-width: 120px;">
-            <label for="ctrl-num-moments">Jumlah Momen</label>
-            <div class="input-wrap select-wrap">
-              <span class="input-icon">🎯</span>
-              <select id="ctrl-num-moments">
-                <option value="1">1 Momen</option>
-                <option value="2">2 Momen</option>
-                <option value="3">3 Momen</option>
-                <option value="4" selected>4 Momen</option>
-                <option value="5">5 Momen</option>
-                <option value="6">6 Momen</option>
-                <option value="8">8 Momen</option>
-                <option value="10">10 Momen</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Gemini API Key -->
-          <div class="field" style="flex: 1; min-width: 180px;">
-            <label for="ctrl-api-key">Gemini API Key <span>*</span></label>
-            <div class="input-wrap">
-              <span class="input-icon">🔑</span>
-              <input id="ctrl-api-key" type="password" placeholder="AIzaSy..." />
-            </div>
-          </div>
+      <!-- Download area overlay -->
+      <div class="workspace-download-area" id="workspace-download-area">
+        <span style="font-size:3rem;">🎉</span>
+        <h3 style="color:var(--accent-success); font-size:1.1rem; font-weight:700;">Video Berhasil Dipotong!</h3>
+        <p id="workspace-download-name" style="font-family:'JetBrains Mono',monospace; font-size:.82rem; color:var(--accent-success);"></p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+          <a id="download-link" href="#" class="btn-download" download>⬇️ &nbsp;Simpan File</a>
+          <button class="btn-new" id="btn-new">+ Clip Baru</button>
         </div>
+      </div>
+    </div>
 
-        <!-- Format & Subtitle Options -->
-        <div class="controversial-options-row">
-          <div class="field" style="flex: 1; min-width: 160px;">
-            <label for="ctrl-video-format">Format Output</label>
-            <div class="input-wrap select-wrap">
-              <span class="input-icon">📱</span>
-              <select id="ctrl-video-format">
-                <option value="original">Original</option>
-                <option value="vertical-crop">Vertical 9:16 (Crop)</option>
-                <option value="vertical-pad">Vertical 9:16 (Pad)</option>
-                <option value="vertical-blur">Vertical 9:16 (Blur Background)</option>
-                <option value="vertical-speaker">Vertical 9:16 (🎯 Speaker Tracking)</option>
-              </select>
-            </div>
-          </div>
-          <label class="checkbox-row" for="ctrl-subtitle-toggle" style="flex-shrink: 0; margin-top: 26px;">
-            <input type="checkbox" id="ctrl-subtitle-toggle" />
-            <span class="checkbox-box"></span>
-            <span class="checkbox-label">Aktifkan Subtitle Otomatis</span>
-          </label>
-          <div class="field" style="flex: 0 0 180px; min-width: 150px;">
-            <label for="ctrl-subtitle-lang">Bahasa Subtitle</label>
-            <div class="input-wrap select-wrap">
-              <span class="input-icon">🌐</span>
-              <select id="ctrl-subtitle-lang">
-                <option value="id">🇮🇩 Indonesia</option>
-                <option value="en">🇬🇧 English</option>
-                <option value="id,en" selected>🌐 Indonesia + English</option>
-              </select>
-            </div>
-          </div>
+    <!-- Video Timeline -->
+    <div class="video-timeline" id="video-timeline">
+      <div class="timeline-header">
+        <span class="timeline-title">🎞️ Timeline</span>
+        <span class="timeline-info" id="timeline-info">00:00:00 — 00:00:00</span>
+      </div>
+      <div class="timeline-track" id="timeline-track">
+        <!-- Fake waveform bars -->
+        <div class="timeline-waveform" id="timeline-waveform"></div>
+        <!-- Highlighted clip region -->
+        <div class="timeline-clip-region" id="timeline-clip-region">
+          <span class="timeline-clip-label" id="timeline-clip-label"></span>
         </div>
+      </div>
+      <!-- Progress section (shown during processing) -->
+      <div class="timeline-progress-section" id="timeline-progress-section">
+        <div class="status-label" style="flex-shrink:0;">
+          <span class="pulse" id="status-pulse"></span>
+          <span id="status-label" style="font-size:.72rem;">⏳ Menunggu...</span>
+        </div>
+        <div class="timeline-progress-bar">
+          <div class="timeline-progress-fill" id="progress-fill"></div>
+        </div>
+        <span class="progress-pct" id="progress-pct" style="font-size:.72rem;">0%</span>
+      </div>
+    </div>
+  </section>
 
-        <!-- ── Subtitle Style Options (tampil saat subtitle diaktifkan) ── -->
-        <div id="ctrl-subtitle-options" style="display:none; margin: 4px 0 16px; padding: 16px; background: rgba(0,0,0,0.25); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
-          <p class="position-label" style="margin-bottom: 12px; font-size: 0.85rem;">🎨 Kustomisasi Subtitle</p>
+  <!-- ═══ RIGHT PANEL ═══ -->
+  <aside class="right-panel">
 
-          <!-- Font Size / Case / Position -->
-          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; align-items: flex-end;">
-            <div style="flex: 0 0 110px;">
-              <label for="ctrl-sub-fontsize" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Ukuran Font</label>
-              <div class="input-wrap">
-                <input type="number" id="ctrl-sub-fontsize" value="22" min="10" max="80" style="padding: 7px 12px; font-size: 0.88rem;" />
+    <!-- Panel Tabs -->
+    <div class="panel-tabs">
+      <div class="panel-tab active" data-panel="panel-controls">⚙️ Controls</div>
+      <div class="panel-tab" data-panel="panel-results">📋 Results</div>
+      <div class="panel-tab" data-panel="panel-ai">✨ AI Copy</div>
+    </div>
+
+    <!-- Panel Content -->
+    <div class="panel-content">
+
+      <!-- ═══ TAB: Controls ═══ -->
+      <div class="tab-page active" id="panel-controls">
+
+        <!-- Auto-Clip Tab Content -->
+        <div class="tab-page active" id="tab-auto-clip">
+          <div class="card controversial-card" id="controversial-card">
+            <div class="controversial-header" id="controversial-toggle">
+              <div class="controversial-title-row">
+                <div class="controversial-icon-wrap">🔥</div>
+                <div>
+                  <p class="controversial-label">Auto-Clip Momen</p>
+                  <p class="controversial-sublabel">Scan video dengan AI — deteksi & potong otomatis</p>
+                </div>
+              </div>
+              <div class="controversial-badge-row">
+                <span class="badge-ai">✨ AI</span>
+                <span class="controversial-chevron" id="controversial-chevron">▼</span>
               </div>
             </div>
-            <div style="flex: 1; min-width: 120px;">
-              <label for="ctrl-sub-case" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Huruf</label>
-              <div class="input-wrap select-wrap">
-                <select id="ctrl-sub-case" style="padding: 7px 12px; font-size: 0.88rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
-                  <option value="normal">Normal</option>
-                  <option value="upper" selected>UPPERCASE</option>
-                </select>
+
+            <div class="controversial-body open" id="controversial-body">
+              <div class="controversial-divider"></div>
+
+              <!-- URL Input -->
+              <div class="field" style="margin-bottom:10px;">
+                <label for="ctrl-url">URL Video <span>*</span></label>
+                <div class="input-wrap">
+                  <span class="input-icon">🔗</span>
+                  <input id="ctrl-url" type="text" class="url-input" placeholder="https://www.youtube.com/watch?v=..." />
+                </div>
+              </div>
+
+              <!-- Settings Row -->
+              <div class="controversial-inputs">
+                <div class="field" style="flex:1; min-width:100px;">
+                  <label for="ctrl-num-moments">Jumlah Momen</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🎯</span>
+                    <select id="ctrl-num-moments">
+                      <option value="1">1 Momen</option>
+                      <option value="2">2 Momen</option>
+                      <option value="3">3 Momen</option>
+                      <option value="4" selected>4 Momen</option>
+                      <option value="5">5 Momen</option>
+                      <option value="6">6 Momen</option>
+                      <option value="8">8 Momen</option>
+                      <option value="10">10 Momen</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="field" style="flex:1; min-width:100px;">
+                  <label for="ctrl-api-key">Gemini API Key <span>*</span></label>
+                  <div class="input-wrap">
+                    <span class="input-icon">🔑</span>
+                    <input id="ctrl-api-key" type="password" placeholder="AIzaSy..." />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Format & Subtitle -->
+              <div class="controversial-options-row">
+                <div class="field" style="flex:1; min-width:120px;">
+                  <label for="ctrl-video-format">Format Output</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">📱</span>
+                    <select id="ctrl-video-format">
+                      <option value="original">Original</option>
+                      <option value="vertical-crop">Vertical 9:16 (Crop)</option>
+                      <option value="vertical-pad">Vertical 9:16 (Pad)</option>
+                      <option value="vertical-blur">Vertical 9:16 (Blur Background)</option>
+                      <option value="vertical-speaker">Vertical 9:16 (🎯 Speaker Tracking)</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="checkbox-row" for="ctrl-subtitle-toggle" style="flex-shrink:0; margin-top:22px;">
+                  <input type="checkbox" id="ctrl-subtitle-toggle" />
+                  <span class="checkbox-box"></span>
+                  <span class="checkbox-label">Subtitle Otomatis</span>
+                </label>
+              </div>
+
+              <div class="controversial-options-row">
+                <div class="field" style="flex:1; min-width:120px;">
+                  <label for="ctrl-subtitle-lang">Bahasa Subtitle</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🌐</span>
+                    <select id="ctrl-subtitle-lang">
+                      <option value="id">🇮🇩 Indonesia</option>
+                      <option value="en">🇬🇧 English</option>
+                      <option value="id,en" selected>🌐 Indonesia + English</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Subtitle Style Options (shown when subtitle enabled) -->
+              <div id="ctrl-subtitle-options" style="display:none; margin:4px 0 12px; padding:12px; background:rgba(0,0,0,0.25); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
+                <p class="position-label" style="margin-bottom:10px; font-size:0.78rem;">🎨 Kustomisasi Subtitle</p>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; align-items:flex-end;">
+                  <div style="flex:0 0 90px;">
+                    <label for="ctrl-sub-fontsize" style="font-size:0.72rem; color:var(--text-muted); margin-bottom:3px; display:block;">Ukuran Font</label>
+                    <div class="input-wrap">
+                      <input type="number" id="ctrl-sub-fontsize" value="22" min="10" max="80" style="padding:6px 10px; font-size:0.82rem;" />
+                    </div>
+                  </div>
+                  <div style="flex:1; min-width:90px;">
+                    <label for="ctrl-sub-case" style="font-size:0.72rem; color:var(--text-muted); margin-bottom:3px; display:block;">Huruf</label>
+                    <div class="input-wrap select-wrap">
+                      <select id="ctrl-sub-case" style="padding:6px 10px; font-size:0.82rem;">
+                        <option value="normal">Normal</option>
+                        <option value="upper" selected>UPPERCASE</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="flex:1; min-width:90px;">
+                    <label for="ctrl-sub-position" style="font-size:0.72rem; color:var(--text-muted); margin-bottom:3px; display:block;">Posisi</label>
+                    <div class="input-wrap select-wrap">
+                      <select id="ctrl-sub-position" style="padding:6px 10px; font-size:0.82rem;">
+                        <option value="bottom" selected>Bawah</option>
+                        <option value="center">Tengah</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Preset Style Cards -->
+                <p style="font-size:0.72rem; color:var(--text-muted); margin-bottom:6px;">🎨 Preset Style</p>
+                <div class="preset-scroller">
+                  <div class="preset-cards" id="ctrl-preset-cards"></div>
+                </div>
+
+                <!-- Hidden style params -->
+                <input type="hidden" id="ctrl-sub-primary-color" value="FFFFFF" />
+                <input type="hidden" id="ctrl-sub-outline-color" value="000000" />
+                <input type="hidden" id="ctrl-sub-back-color"    value="000000" />
+                <input type="hidden" id="ctrl-sub-back-alpha"    value="00" />
+                <input type="hidden" id="ctrl-sub-border-style"  value="1" />
+                <input type="hidden" id="ctrl-sub-outline-width" value="3" />
+                <input type="hidden" id="ctrl-sub-shadow-val"    value="2" />
+              </div>
+
+              <!-- Hook Title Settings -->
+              <div class="controversial-options-row" style="margin-top:10px;">
+                <div class="field" style="flex:1; min-width:80px;">
+                  <label for="ctrl-hook-fontsize">Font Judul</label>
+                  <div class="input-wrap">
+                    <input type="number" id="ctrl-hook-fontsize" value="46" min="28" max="100" style="padding:6px 10px; font-size:0.82rem;" />
+                  </div>
+                </div>
+                <div class="field" style="flex:1; min-width:100px;">
+                  <label for="ctrl-hook-position">Posisi Judul</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">📍</span>
+                    <select id="ctrl-hook-position">
+                      <option value="top">Atas</option>
+                      <option value="center">Tengah</option>
+                      <option value="bottom">Bawah</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field" style="flex:1.5; min-width:120px;">
+                  <label for="ctrl-hook-style">Style Judul</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🎨</span>
+                    <select id="ctrl-hook-style">
+                      <option value="yellow-pop">Yellow Pop</option>
+                      <option value="tiktok">TikTok Red</option>
+                      <option value="fire" selected>🔥 Fire</option>
+                      <option value="breaking">🚨 Breaking</option>
+                      <option value="white-box">White Box</option>
+                      <option value="neon">Neon Glow</option>
+                      <option value="classic">Classic White</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Scan Button -->
+              <button type="button" id="btn-scan" class="btn-scan">
+                <div class="spinner" id="scan-spinner"></div>
+                <span id="scan-btn-label">🔍&nbsp; Scan & Deteksi Momen</span>
+              </button>
+
+              <!-- Scan Status -->
+              <div id="scan-status" class="scan-status" style="display:none;"></div>
+            </div><!-- /controversial-body -->
+          </div><!-- /controversial-card -->
+        </div><!-- /tab-auto-clip -->
+
+        <!-- Manual Clip Tab Content -->
+        <div class="tab-page" id="tab-manual-clip">
+          <div class="card">
+            <p class="card-title">✂️ Potong Video Manual</p>
+            <form id="clip-form" autocomplete="off" novalidate>
+              <div class="field-group">
+
+                <!-- URL -->
+                <div class="field">
+                  <label for="url-input">URL Video <span>*</span></label>
+                  <div class="input-wrap">
+                    <span class="input-icon">🔗</span>
+                    <input id="url-input" type="text" class="url-input" placeholder="https://www.youtube.com/watch?v=..." />
+                  </div>
+                </div>
+
+                <!-- Time Range -->
+                <div class="time-row">
+                  <div class="field">
+                    <label for="start-input">Waktu Mulai <span>*</span></label>
+                    <div class="input-wrap">
+                      <span class="input-icon">⏱️</span>
+                      <input id="start-input" type="text" placeholder="00:01:30" required pattern="[\d:.]*" title="Format: HH:MM:SS atau detik (misal: 90)" />
+                    </div>
+                    <span class="field-hint">HH:MM:SS atau detik mentah</span>
+                  </div>
+                  <div class="field">
+                    <label for="end-input">Waktu Selesai <span>*</span></label>
+                    <div class="input-wrap">
+                      <span class="input-icon">⏹️</span>
+                      <input id="end-input" type="text" placeholder="00:02:45" required pattern="[\d:.]*" title="Format: HH:MM:SS atau detik" />
+                    </div>
+                    <span class="field-hint">HH:MM:SS atau detik mentah</span>
+                  </div>
+                </div>
+
+                <!-- Output Format -->
+                <div class="field">
+                  <label for="video-format">Format Video <span>*</span></label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">📱</span>
+                    <select id="video-format">
+                      <option value="original">Original (Tanpa Ubah Rasio)</option>
+                      <option value="vertical-crop">Vertical 9:16 (Crop Tengah)</option>
+                      <option value="vertical-pad">Vertical 9:16 (Pad Bar Hitam)</option>
+                      <option value="vertical-blur">Vertical 9:16 (Blur Background)</option>
+                      <option value="vertical-speaker">Vertical 9:16 (🎯 Speaker Tracking)</option>
+                    </select>
+                  </div>
+                  <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
+                </div>
+
+                <!-- Hook Title Section -->
+                <div class="field">
+                  <label for="hook-title">Judul Hook <span>(Opsional)</span></label>
+                  <div style="display:flex; gap:6px;">
+                    <div class="input-wrap" style="flex:1;">
+                      <span class="input-icon">🔥</span>
+                      <input type="text" id="hook-title" placeholder="Contoh: Tonton Sampai Habis!" />
+                    </div>
+                    <button type="button" id="btn-generate-hook" class="btn-secondary" style="padding:0 12px; border-radius:8px; display:flex; align-items:center; gap:4px; font-weight:500; font-size:.82rem;">
+                      <span class="btn-icon">✨</span> Auto
+                    </button>
+                  </div>
+
+                  <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:70px;">
+                      <label for="hook-fontsize" style="font-size:.72rem; color:var(--text-muted); margin-bottom:3px; display:block;">Font Size</label>
+                      <div class="input-wrap">
+                        <input type="number" id="hook-fontsize" value="46" min="24" max="100" style="padding:6px 10px; font-size:.82rem;" />
+                      </div>
+                    </div>
+                    <div style="flex:1; min-width:80px;">
+                      <label for="hook-position" style="font-size:.72rem; color:var(--text-muted); margin-bottom:3px; display:block;">Posisi</label>
+                      <div class="input-wrap select-wrap">
+                        <select id="hook-position" style="padding:6px 10px; font-size:.82rem;">
+                          <option value="top">Atas</option>
+                          <option value="center">Tengah</option>
+                          <option value="bottom">Bawah</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style="flex:1.5; min-width:100px;">
+                      <label for="hook-style" style="font-size:.72rem; color:var(--text-muted); margin-bottom:3px; display:block;">Style</label>
+                      <div class="input-wrap select-wrap">
+                        <select id="hook-style" style="padding:6px 10px; font-size:.82rem;">
+                          <option value="yellow-pop">Yellow Pop</option>
+                          <option value="tiktok">TikTok Red</option>
+                          <option value="fire" selected>🔥 Fire</option>
+                          <option value="breaking">🚨 Breaking</option>
+                          <option value="white-box">White Box</option>
+                          <option value="neon">Neon Glow</option>
+                          <option value="classic">Classic White</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="field-hint" style="margin-top:6px; display:block;">Teks ini akan dibakar di tengah atas video selama 4 detik pertama.</span>
+                </div>
+
+                <!-- Subtitle Section -->
+                <div class="subtitle-section">
+                  <div class="subtitle-toggle-row">
+                    <div class="subtitle-toggle-info">
+                      <span class="subtitle-icon">💬</span>
+                      <div>
+                        <p class="subtitle-title">Tambahkan Subtitle</p>
+                        <p class="subtitle-desc">Unduh & sisipkan subtitle otomatis</p>
+                      </div>
+                    </div>
+                    <label class="toggle-switch" for="subtitle-toggle">
+                      <input type="checkbox" id="subtitle-toggle" />
+                      <span class="toggle-track">
+                        <span class="toggle-thumb"></span>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div class="subtitle-options" id="subtitle-options">
+                    <div class="sub-options-grid">
+                      <div class="field">
+                        <label for="subtitle-lang">Bahasa Subtitle</label>
+                        <div class="input-wrap">
+                          <span class="input-icon">🌐</span>
+                          <input id="subtitle-lang" type="text" placeholder="id,en" value="id,en" title="Kode bahasa, pisahkan dengan koma" />
+                        </div>
+                        <span class="field-hint">BCP-47 (id=Indonesia, en=English)</span>
+                      </div>
+                      <div class="field">
+                        <label for="subtitle-type">Mode Subtitle</label>
+                        <div class="input-wrap select-wrap">
+                          <span class="input-icon">🎚️</span>
+                          <select id="subtitle-type">
+                            <option value="soft">Soft — dapat dinonaktifkan</option>
+                            <option value="burn">Burn-in — teks dibakar</option>
+                          </select>
+                        </div>
+                        <span class="field-hint">Burn-in memerlukan re-encode</span>
+                      </div>
+                    </div>
+
+                    <!-- Position selector (burn-in only) -->
+                    <div class="position-row" id="position-row">
+                      <p class="position-label">📍 Posisi Subtitle (Burn-in)</p>
+                      <div class="position-options">
+                        <label class="pos-btn" for="pos-bottom">
+                          <input type="radio" name="subtitle-position" id="pos-bottom" value="bottom" checked />
+                          <span class="pos-card">
+                            <span class="pos-preview"><span class="pos-screen"><span class="pos-bar bottom-bar"></span></span></span>
+                            <span class="pos-name">Bawah</span>
+                          </span>
+                        </label>
+                        <label class="pos-btn" for="pos-center">
+                          <input type="radio" name="subtitle-position" id="pos-center" value="center" />
+                          <span class="pos-card">
+                            <span class="pos-preview"><span class="pos-screen"><span class="pos-bar center-bar"></span></span></span>
+                            <span class="pos-name">Tengah</span>
+                          </span>
+                        </label>
+                      </div>
+                      <p class="field-hint" style="margin-top:6px;">Hanya berlaku untuk mode Burn-in.</p>
+                    </div>
+
+                    <!-- Style selector (burn-in only) -->
+                    <div class="style-row" id="style-row" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border-subtle); display:none;">
+                      <p class="position-label">🎨 Preset Style Subtitle</p>
+                      <div class="preset-scroller">
+                        <div class="preset-cards" id="preset-cards"></div>
+                      </div>
+                      <p class="preset-manual-label">✏️ Kustomisasi Manual</p>
+                      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                        <div class="field" style="flex:1; min-width:80px;">
+                          <label for="sub-fontsize">Ukuran Font</label>
+                          <div class="input-wrap"><input type="number" id="sub-fontsize" value="22" min="10" max="100" /></div>
+                        </div>
+                        <div class="field" style="flex:1; min-width:90px;">
+                          <label for="sub-case">Huruf</label>
+                          <div class="input-wrap select-wrap">
+                            <select id="sub-case">
+                              <option value="normal">Normal</option>
+                              <option value="upper">UPPERCASE</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      <div style="display:flex; gap:12px; margin-bottom:6px;">
+                        <label class="checkbox-row" for="sub-bold"><input type="checkbox" id="sub-bold" /><span class="checkbox-box"></span><span class="checkbox-label" style="font-weight:bold;">Bold</span></label>
+                        <label class="checkbox-row" for="sub-italic"><input type="checkbox" id="sub-italic" /><span class="checkbox-box"></span><span class="checkbox-label" style="font-style:italic;">Italic</span></label>
+                        <label class="checkbox-row" for="sub-underline"><input type="checkbox" id="sub-underline" /><span class="checkbox-box"></span><span class="checkbox-label" style="text-decoration:underline;">Underline</span></label>
+                      </div>
+                      <input type="hidden" id="sub-primary-color" value="FFFFFF" />
+                      <input type="hidden" id="sub-outline-color" value="000000" />
+                      <input type="hidden" id="sub-back-color"    value="000000" />
+                      <input type="hidden" id="sub-back-alpha"    value="00" />
+                      <input type="hidden" id="sub-border-style"  value="1" />
+                      <input type="hidden" id="sub-outline-width" value="2" />
+                      <input type="hidden" id="sub-shadow-val"    value="1" />
+                    </div>
+
+                    <label class="checkbox-row" for="subtitle-auto">
+                      <input type="checkbox" id="subtitle-auto" checked />
+                      <span class="checkbox-box"></span>
+                      <span class="checkbox-label">Sertakan subtitle otomatis (auto-generated)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Submit -->
+                <button type="button" class="btn-clip" id="btn-clip">
+                  <div class="spinner"></div>
+                  <span class="btn-label">✂️ &nbsp;Potong Video</span>
+                </button>
+
+              </div>
+            </form>
+          </div>
+        </div><!-- /tab-manual-clip -->
+
+        <!-- Cookies Tab Content -->
+        <div class="tab-page" id="tab-cookies">
+          <div class="card" id="cookies-card">
+            <div class="controversial-header">
+              <div class="controversial-title-row">
+                <div class="controversial-icon-wrap cookies-card-icon" style="background:rgba(255,165,0,0.2); color:#ffa500;">🍪</div>
+                <div>
+                  <p class="controversial-label">Bypass Blokir YouTube</p>
+                  <p class="controversial-sublabel">Upload cookies.txt jika YouTube memblokir akses</p>
+                </div>
               </div>
             </div>
-            <div style="flex: 1; min-width: 120px;">
-              <label for="ctrl-sub-position" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Posisi</label>
-              <div class="input-wrap select-wrap">
-                <select id="ctrl-sub-position" style="padding: 7px 12px; font-size: 0.88rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
-                  <option value="bottom" selected>Bawah</option>
-                  <option value="center">Tengah</option>
-                </select>
+            <div class="controversial-body" style="display:block;">
+              <div class="controversial-divider"></div>
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <input type="file" id="cookies-file-input" accept=".txt" style="display:none;" />
+                <button type="button" class="btn-new" onclick="document.getElementById('cookies-file-input').click()" style="padding:8px 14px; min-width:130px; justify-content:center;">
+                  <span style="margin-right:6px;">📁</span> Pilih cookies.txt
+                </button>
+                <span id="cookies-file-name" style="font-size:.78rem; color:var(--text-muted);">Belum ada file</span>
+                <button type="button" id="btn-upload-cookies" class="btn-scan" style="padding:8px 14px; margin-left:auto; max-width:150px;">
+                  <div class="spinner" id="cookies-spinner" style="display:none;"></div>
+                  <span id="cookies-btn-label">⬆️ Upload</span>
+                </button>
+              </div>
+              <div id="cookies-status" style="margin-top:10px; font-size:.78rem;"></div>
+            </div>
+          </div>
+        </div><!-- /tab-cookies -->
+
+        <!-- Tips Tab Content -->
+        <div class="tab-page" id="tab-tips">
+          <div class="card">
+            <p class="card-title">💡 Tips Penggunaan</p>
+            <div class="tips-grid">
+              <div class="tip-item">
+                <span class="tip-icon">🎯</span>
+                <div class="tip-text">
+                  <h4>Format Waktu</h4>
+                  <p>Gunakan <code>HH:MM:SS</code> atau angka detik seperti <code>90</code> untuk 1 menit 30 detik.</p>
+                </div>
+              </div>
+              <div class="tip-item">
+                <span class="tip-icon">⚡</span>
+                <div class="tip-text">
+                  <h4>Stream Copy</h4>
+                  <p>Pemotongan dilakukan tanpa re-encode — sangat cepat.</p>
+                </div>
+              </div>
+              <div class="tip-item">
+                <span class="tip-icon">🌐</span>
+                <div class="tip-text">
+                  <h4>Multi-Platform</h4>
+                  <p>YouTube, Twitter, Instagram, TikTok, dan 1000+ situs via yt-dlp.</p>
+                </div>
+              </div>
+              <div class="tip-item">
+                <span class="tip-icon">📁</span>
+                <div class="tip-text">
+                  <h4>Output Folder</h4>
+                  <p>Semua hasil clip tersimpan di folder <code>outputs/</code>.</p>
+                </div>
+              </div>
+              <div class="tip-item">
+                <span class="tip-icon">💬</span>
+                <div class="tip-text">
+                  <h4>Subtitle Otomatis</h4>
+                  <p>Aktifkan subtitle untuk menyisipkan teks ke video.</p>
+                </div>
               </div>
             </div>
           </div>
+        </div><!-- /tab-tips -->
 
-          <!-- Preset Style Cards -->
-          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">🎨 Preset Style</p>
-          <div class="preset-scroller">
-            <div class="preset-cards" id="ctrl-preset-cards"></div>
-          </div>
+      </div><!-- /panel-controls -->
 
-          <!-- Hidden style params (diisi oleh JS saat preset dipilih) -->
-          <input type="hidden" id="ctrl-sub-primary-color" value="FFFFFF" />
-          <input type="hidden" id="ctrl-sub-outline-color" value="000000" />
-          <input type="hidden" id="ctrl-sub-back-color"    value="000000" />
-          <input type="hidden" id="ctrl-sub-back-alpha"    value="00" />
-          <input type="hidden" id="ctrl-sub-border-style"  value="1" />
-          <input type="hidden" id="ctrl-sub-outline-width" value="3" />
-          <input type="hidden" id="ctrl-sub-shadow-val"    value="2" />
-        </div>
+      <!-- ═══ TAB: Results (moments, batch progress, gallery) ═══ -->
+      <div class="tab-page" id="panel-results">
 
-        <div class="controversial-options-row" style="margin-top: 15px;">
-          <div class="field" style="flex: 1; min-width: 120px;">
-            <label for="ctrl-hook-fontsize">Ukuran Font Judul</label>
-            <div class="input-wrap">
-              <input type="number" id="ctrl-hook-fontsize" value="46" min="28" max="100" style="padding: 8px 12px; font-size: 0.9rem;" />
-            </div>
-          </div>
-          <div class="field" style="flex: 1; min-width: 140px;">
-            <label for="ctrl-hook-position">Posisi Judul</label>
-            <div class="input-wrap select-wrap">
-              <span class="input-icon">📍</span>
-              <select id="ctrl-hook-position">
-                <option value="top">Atas</option>
-                <option value="center">Tengah</option>
-                <option value="bottom">Bawah</option>
-              </select>
-            </div>
-          </div>
-          <div class="field" style="flex: 2; min-width: 160px;">
-            <label for="ctrl-hook-style">Style Judul</label>
-            <div class="input-wrap select-wrap">
-              <span class="input-icon">🎨</span>
-              <select id="ctrl-hook-style">
-                <option value="yellow-pop">Yellow Pop (Kuning Outline Hitam)</option>
-                <option value="tiktok">TikTok Red (Merah Outline Putih)</option>
-                <option value="fire" selected>🔥 Fire (Orange Impact)</option>
-                <option value="breaking">🚨 Breaking (Putih Kotak Merah)</option>
-                <option value="white-box">White Box (Teks Putih Kotak Hitam)</option>
-                <option value="neon">Neon Glow (Cyan Bersinar)</option>
-                <option value="classic">Classic White (Putih Biasa)</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Scan Button -->
-        <button type="button" id="btn-scan" class="btn-scan">
-          <div class="spinner" id="scan-spinner"></div>
-          <span id="scan-btn-label">🔍&nbsp; Scan &amp; Deteksi Momen</span>
-        </button>
-
-        <!-- Scan Status -->
-        <div id="scan-status" class="scan-status" style="display:none;"></div>
-
-        <!-- Results Area -->
+        <!-- Moments Result -->
         <div id="moments-result" class="moments-result" style="display:none;">
           <div class="moments-result-header">
             <p class="moments-result-title" id="moments-result-title">Momen Terdeteksi</p>
-            <div style="display:flex; gap:8px; align-items:center;">
-              <span class="transcript-badge" id="transcript-badge" style="display:none;">📝 Dengan Transcript</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <span class="transcript-badge" id="transcript-badge" style="display:none;">📝 Transcript</span>
               <button type="button" id="btn-select-all" class="btn-select-all">☑ Pilih Semua</button>
             </div>
           </div>
-          <!-- Moment Cards List -->
           <div id="moment-cards-list" class="moment-cards-list"></div>
 
-          <!-- Clip Selected Button -->
           <button type="button" id="btn-clip-moments" class="btn-clip-moments">
             <div class="spinner" id="clip-moments-spinner"></div>
             <span id="clip-moments-label">✂️&nbsp; Potong Momen Terpilih</span>
@@ -249,407 +652,74 @@
 
         <!-- Batch Progress Area -->
         <div id="batch-progress-area" class="batch-progress-area" style="display:none;">
-          <p class="batch-progress-title">📡 Progress Pemotongan Batch</p>
+          <p class="batch-progress-title">📡 Progress Batch</p>
           <div id="batch-tasks-list" class="batch-tasks-list"></div>
-          <button type="button" id="btn-batch-new" class="btn-new" style="margin-top:16px; width:100%; justify-content:center;">+ Scan Video Baru</button>
+          <button type="button" id="btn-batch-new" class="btn-new" style="margin-top:12px; width:100%; justify-content:center;">+ Scan Video Baru</button>
         </div>
 
         <!-- Batch Download Gallery -->
         <div id="batch-download-gallery" class="batch-download-gallery" style="display:none;">
           <div class="batch-gallery-header">
-            <span style="font-size:2rem;">🎉</span>
-            <p class="batch-gallery-title">Semua Klip Berhasil Dipotong!</p>
+            <span style="font-size:1.6rem;">🎉</span>
+            <p class="batch-gallery-title">Semua Klip Berhasil!</p>
           </div>
           <div id="batch-clips-grid" class="batch-clips-grid"></div>
-          <button type="button" id="btn-batch-reset" class="btn-new" style="margin-top:16px; width:100%; justify-content:center;">+ Scan Video Baru</button>
+          <button type="button" id="btn-batch-reset" class="btn-new" style="margin-top:12px; width:100%; justify-content:center;">+ Scan Video Baru</button>
         </div>
 
-      </div><!-- /controversial-body -->
-    </div><!-- /controversial-card -->
-
-    <!-- ── Cookies Upload Card (Bypass Blokir) ── -->
-    <div class="card" id="cookies-card">
-      <div class="controversial-header">
-        <div class="controversial-title-row">
-          <div class="controversial-icon-wrap" style="background: rgba(255,165,0,0.2); color: #ffa500;">🍪</div>
-          <div>
-            <p class="controversial-label">Bypass Blokir YouTube (Cookies)</p>
-            <p class="controversial-sublabel">Upload cookies.txt jika YouTube memblokir akses (Bot Detection)</p>
+        <!-- Manual Clip Progress -->
+        <div class="card progress-section" id="progress-section">
+          <p class="card-title">📡 Progress</p>
+          <div class="status-row">
+            <div class="status-label">
+              <span class="pulse" id="status-pulse-panel"></span>
+              <span id="status-label-panel">⏳ Menunggu...</span>
+            </div>
+            <span class="progress-pct" id="progress-pct-panel">0%</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill-panel"></div>
+          </div>
+          <div class="terminal">
+            <div class="terminal-header">
+              <div class="terminal-dot"></div>
+              <div class="terminal-dot"></div>
+              <div class="terminal-dot"></div>
+              <span class="terminal-title">output log</span>
+            </div>
+            <div id="terminal-body"></div>
+          </div>
+          <div class="error-card" id="error-card">
+            <p id="error-msg"></p>
           </div>
         </div>
-      </div>
-      <div class="controversial-body" style="display:block;">
-        <div class="controversial-divider"></div>
-        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <input type="file" id="cookies-file-input" accept=".txt" style="display:none;" />
-          <button type="button" class="btn-new" onclick="document.getElementById('cookies-file-input').click()" style="padding: 10px 16px; min-width: 150px; justify-content: center;">
-            <span style="margin-right:8px;">📁</span> Pilih cookies.txt
-          </button>
-          <span id="cookies-file-name" style="font-size: 0.9rem; color: var(--text-muted);">Belum ada file dipilih</span>
-          <button type="button" id="btn-upload-cookies" class="btn-scan" style="padding: 10px 16px; margin-left: auto; max-width: 200px;">
-            <div class="spinner" id="cookies-spinner" style="display:none;"></div>
-            <span id="cookies-btn-label">⬆️ Upload</span>
-          </button>
-        </div>
-        <div id="cookies-status" style="margin-top: 12px; font-size: 0.85rem;"></div>
-      </div>
-    </div>
 
-    <!-- ── Main Form Card (Manual Clip — tidak berubah) ── -->
-    <div class="card">
-      <p class="card-title">✂️ Potong Video Manual</p>
-      <form id="clip-form" autocomplete="off" novalidate>
-        <div class="field-group">
-
-          <!-- URL -->
-          <div class="field">
-            <label for="url-input">URL Video <span>*</span></label>
-            <div class="input-wrap">
-              <span class="input-icon">🔗</span>
-              <input
-                id="url-input"
-                type="text"
-                class="url-input"
-                placeholder="https://www.youtube.com/watch?v=..."
-              />
-            </div>
-          </div>
-
-          <!-- Time Range -->
-          <div class="time-row">
-            <div class="field">
-              <label for="start-input">Waktu Mulai <span>*</span></label>
-              <div class="input-wrap">
-                <span class="input-icon">⏱️</span>
-                <input
-                  id="start-input"
-                  type="text"
-                  placeholder="00:01:30"
-                  required
-                  pattern="[\d:.]*"
-                  title="Format: HH:MM:SS atau detik (misal: 90)"
-                />
-              </div>
-              <span class="field-hint">HH:MM:SS atau detik mentah (misal: 90)</span>
-            </div>
-
-            <div class="field">
-              <label for="end-input">Waktu Selesai <span>*</span></label>
-              <div class="input-wrap">
-                <span class="input-icon">⏹️</span>
-                <input
-                  id="end-input"
-                  type="text"
-                  placeholder="00:02:45"
-                  required
-                  pattern="[\d:.]*"
-                  title="Format: HH:MM:SS atau detik"
-                />
-              </div>
-              <span class="field-hint">HH:MM:SS atau detik mentah (misal: 165)</span>
-            </div>
-          </div>
-
-          <!-- Output Format Section -->
-          <div class="time-row" style="margin-bottom: 18px;">
-            <div class="field" style="flex: 2;">
-              <label for="video-format">Format Video <span>*</span></label>
-              <div class="input-wrap select-wrap">
-                <span class="input-icon">📱</span>
-                <select id="video-format">
-                  <option value="original">Original (Tanpa Ubah Rasio)</option>
-                  <option value="vertical-crop">Vertical 9:16 (Crop Tengah — TikTok/Reels)</option>
-                  <option value="vertical-pad">Vertical 9:16 (Pad Bar Hitam Atas/Bawah)</option>
-                  <option value="vertical-blur">Vertical 9:16 (Blur Background)</option>
-                  <option value="vertical-speaker">Vertical 9:16 (🎯 Speaker Tracking — AI)</option>
-                </select>
-              </div>
-              <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
-            </div>
-          </div>
-
-          <!-- Hook Title Section -->
-          <div class="field" style="margin-bottom: 24px;">
-            <label for="hook-title">Judul Hook <span>(Opsional)</span></label>
-            <div style="display: flex; gap: 8px;">
-              <div class="input-wrap" style="flex: 1;">
-                <span class="input-icon">🔥</span>
-                <input type="text" id="hook-title" placeholder="Contoh: Tonton Sampai Habis!" />
-              </div>
-              <button type="button" id="btn-generate-hook" class="btn-secondary" style="padding: 0 16px; border-radius: 12px; display: flex; align-items: center; gap: 6px; font-weight: 500; font-size: 0.9rem;">
-                <span class="btn-icon">✨</span> Auto
-              </button>
-            </div>
-            
-            <div style="display: flex; gap: 15px; margin-top: 10px;">
-              <!-- Hook Font Size -->
-              <div style="flex: 1;">
-                <label for="hook-fontsize" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Ukuran Font</label>
-                <div class="input-wrap">
-                  <input type="number" id="hook-fontsize" value="46" min="24" max="100" style="padding: 8px 12px; font-size: 0.9rem;" />
-                </div>
-              </div>
-              <!-- Hook Position -->
-              <div style="flex: 1;">
-                <label for="hook-position" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Posisi Judul</label>
-                <div class="input-wrap select-wrap">
-                  <span class="input-icon">📍</span>
-                  <select id="hook-position" style="padding: 8px 12px; font-size: 0.9rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
-                    <option value="top">Atas</option>
-                    <option value="center">Tengah</option>
-                    <option value="bottom">Bawah</option>
-                  </select>
-                </div>
-              </div>
-              <!-- Hook Style -->
-              <div style="flex: 2;">
-                <label for="hook-style" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Style Judul</label>
-                <div class="input-wrap select-wrap">
-              <select id="hook-style" style="padding: 8px 12px; font-size: 0.9rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
-                    <option value="yellow-pop">Yellow Pop (Kuning Outline Hitam)</option>
-                    <option value="tiktok">TikTok Red (Merah Outline Putih)</option>
-                    <option value="fire" selected>🔥 Fire (Orange Impact)</option>
-                    <option value="breaking">🚨 Breaking (Putih Kotak Merah)</option>
-                    <option value="white-box">White Box (Teks Putih Kotak Hitam)</option>
-                    <option value="neon">Neon Glow (Cyan Bersinar)</option>
-                    <option value="classic">Classic White (Putih Biasa)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            
-            <span class="field-hint" style="margin-top: 8px; display: block;">Teks ini akan dibakar (burn-in) di tengah atas video selama 4 detik pertama untuk menarik perhatian penonton.</span>
-          </div>
-
-
-          <!-- Subtitle Section -->
-          <div class="subtitle-section">
-            <!-- Toggle row -->
-            <div class="subtitle-toggle-row">
-              <div class="subtitle-toggle-info">
-                <span class="subtitle-icon">💬</span>
-                <div>
-                  <p class="subtitle-title">Tambahkan Subtitle</p>
-                  <p class="subtitle-desc">Unduh &amp; sisipkan subtitle otomatis ke dalam video</p>
-                </div>
-              </div>
-              <label class="toggle-switch" for="subtitle-toggle">
-                <input type="checkbox" id="subtitle-toggle" />
-                <span class="toggle-track">
-                  <span class="toggle-thumb"></span>
-                </span>
-              </label>
-            </div>
-
-            <!-- Expanded options (shown when toggle is ON) -->
-            <div class="subtitle-options" id="subtitle-options">
-              <div class="sub-options-grid">
-
-                <!-- Language -->
-                <div class="field">
-                  <label for="subtitle-lang">Bahasa Subtitle</label>
-                  <div class="input-wrap">
-                    <span class="input-icon">🌐</span>
-                    <input
-                      id="subtitle-lang"
-                      type="text"
-                      placeholder="id,en"
-                      value="id,en"
-                      title="Kode bahasa, pisahkan dengan koma (misal: id,en)"
-                    />
-                  </div>
-                  <span class="field-hint">Kode bahasa BCP-47 (id=Indonesia, en=English)</span>
-                </div>
-
-                <!-- Mode -->
-                <div class="field">
-                  <label for="subtitle-type">Mode Subtitle</label>
-                  <div class="input-wrap select-wrap">
-                    <span class="input-icon">🎚️</span>
-                    <select id="subtitle-type">
-                      <option value="soft">Soft — dapat dinonaktifkan di player</option>
-                      <option value="burn">Burn-in — teks dibakar ke dalam video</option>
-                    </select>
-                  </div>
-                  <span class="field-hint">Burn-in memerlukan re-encode, lebih lambat</span>
-                </div>
-
-              </div>
-
-              <!-- Position selector (burn-in only) -->
-              <div class="position-row" id="position-row">
-                <p class="position-label">📍 Posisi Subtitle (Burn-in)</p>
-                <div class="position-options">
-                  <label class="pos-btn" for="pos-bottom">
-                    <input type="radio" name="subtitle-position" id="pos-bottom" value="bottom" checked />
-                    <span class="pos-card">
-                      <span class="pos-preview">
-                        <span class="pos-screen">
-                          <span class="pos-bar bottom-bar"></span>
-                        </span>
-                      </span>
-                      <span class="pos-name">Bawah</span>
-                    </span>
-                  </label>
-                  <label class="pos-btn" for="pos-center">
-                    <input type="radio" name="subtitle-position" id="pos-center" value="center" />
-                    <span class="pos-card">
-                      <span class="pos-preview">
-                        <span class="pos-screen">
-                          <span class="pos-bar center-bar"></span>
-                        </span>
-                      </span>
-                      <span class="pos-name">Tengah</span>
-                    </span>
-                  </label>
-                </div>
-                <p class="field-hint" style="margin-top:8px">Hanya berlaku untuk mode Burn-in. Soft subtitle posisinya dikontrol oleh media player.</p>
-              </div>
-
-              <!-- Style selector (burn-in only) -->
-              <div class="style-row" id="style-row" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle); display: none;">
-                <p class="position-label">🎨 Preset Style Subtitle</p>
-
-                <!-- Preset cards (rendered by JS) -->
-                <div class="preset-scroller">
-                  <div class="preset-cards" id="preset-cards"></div>
-                </div>
-
-                <!-- Manual Override Separator -->
-                <p class="preset-manual-label">✏️ Kustomisasi Manual</p>
-
-                <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 12px;">
-                  <!-- Font Size -->
-                  <div class="field" style="flex: 1; min-width: 100px;">
-                    <label for="sub-fontsize">Ukuran Font</label>
-                    <div class="input-wrap">
-                      <input type="number" id="sub-fontsize" value="22" min="10" max="100" />
-                    </div>
-                  </div>
-                  
-                  <!-- Case -->
-                  <div class="field" style="flex: 1; min-width: 120px;">
-                    <label for="sub-case">Huruf</label>
-                    <div class="input-wrap select-wrap">
-                      <select id="sub-case">
-                        <option value="normal">Normal</option>
-                        <option value="upper">UPPERCASE</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Patterns -->
-                <div style="display: flex; gap: 15px; margin-bottom: 8px;">
-                  <label class="checkbox-row" for="sub-bold" style="margin-top: 0;">
-                    <input type="checkbox" id="sub-bold" />
-                    <span class="checkbox-box"></span>
-                    <span class="checkbox-label" style="font-weight: bold;">Bold</span>
-                  </label>
-                  <label class="checkbox-row" for="sub-italic" style="margin-top: 0;">
-                    <input type="checkbox" id="sub-italic" />
-                    <span class="checkbox-box"></span>
-                    <span class="checkbox-label" style="font-style: italic;">Italic</span>
-                  </label>
-                  <label class="checkbox-row" for="sub-underline" style="margin-top: 0;">
-                    <input type="checkbox" id="sub-underline" />
-                    <span class="checkbox-box"></span>
-                    <span class="checkbox-label" style="text-decoration: underline;">Underline</span>
-                  </label>
-                </div>
-
-                <!-- Hidden inputs for preset color/style params -->
-                <input type="hidden" id="sub-primary-color" value="FFFFFF" />
-                <input type="hidden" id="sub-outline-color" value="000000" />
-                <input type="hidden" id="sub-back-color"    value="000000" />
-                <input type="hidden" id="sub-back-alpha"    value="00" />
-                <input type="hidden" id="sub-border-style"  value="1" />
-                <input type="hidden" id="sub-outline-width" value="2" />
-                <input type="hidden" id="sub-shadow-val"    value="1" />
-              </div>
-
-              <!-- Auto sub checkbox -->
-              <label class="checkbox-row" for="subtitle-auto">
-                <input type="checkbox" id="subtitle-auto" checked />
-                <span class="checkbox-box"></span>
-                <span class="checkbox-label">Sertakan subtitle otomatis (auto-generated) jika tersedia</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Submit -->
-          <button type="button" class="btn-clip" id="btn-clip">
-            <div class="spinner"></div>
-            <span class="btn-label">✂️ &nbsp;Potong Video</span>
-          </button>
-
-        </div>
-      </form>
-    </div>
-
-    <!-- ── Progress Card ── -->
-    <div class="card progress-section" id="progress-section">
-      <p class="card-title">📡 Progress</p>
-
-      <div class="status-row">
-        <div class="status-label">
-          <span class="pulse" id="status-pulse"></span>
-          <span id="status-label">⏳ Menunggu...</span>
-        </div>
-        <span class="progress-pct" id="progress-pct">0%</span>
-      </div>
-
-      <div class="progress-track">
-        <div class="progress-fill" id="progress-fill"></div>
-      </div>
-
-      <!-- Terminal log -->
-      <div class="terminal">
-        <div class="terminal-header">
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <div class="terminal-dot"></div>
-          <span class="terminal-title">output log</span>
-        </div>
-        <div id="terminal-body"></div>
-      </div>
-
-      <!-- Error message -->
-      <div class="error-card" id="error-card">
-        <p id="error-msg"></p>
-      </div>
-    </div>
-
-    <!-- ── Download Success Card ── -->
-    <div class="download-card" id="download-card" style="padding: 30px;">
-      <span class="success-icon">🎉</span>
-      <h3>Video Berhasil Dipotong!</h3>
-      
-      <div style="display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px; text-align: left;">
-        
-        <!-- Kolom Kiri: Video Preview -->
-        <div style="flex: 1; min-width: 300px;">
-          <p id="download-name" style="font-family:'JetBrains Mono',monospace; font-size:.85rem; color:#4ade80; margin-bottom: 15px; text-align: center;"></p>
+        <!-- Download Success Card -->
+        <div class="download-card" id="download-card">
+          <span class="success-icon">🎉</span>
+          <h3>Video Berhasil Dipotong!</h3>
+          <p id="download-name" style="font-family:'JetBrains Mono',monospace; font-size:.78rem; color:var(--accent-success); margin-bottom:12px; text-align:center;"></p>
           <div class="video-preview-wrap">
             <video id="preview-video" controls preload="metadata"></video>
           </div>
-          <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-            <a id="download-link" href="#" class="btn-download" download>
-              ⬇️ &nbsp;Simpan File
-            </a>
-            <button class="btn-new" id="btn-new">+ Clip Baru</button>
+          <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+            <a id="download-link-panel" href="#" class="btn-download" download>⬇️ &nbsp;Simpan</a>
+            <button class="btn-new" id="btn-new-panel">+ Clip Baru</button>
           </div>
         </div>
 
-        <!-- Kolom Kanan: AI Copywriter -->
-        <div style="flex: 1; min-width: 300px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle);">
-          <div class="card-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <span style="font-size: 1.1rem;">✨ AI Social Media Copywriter</span>
-            <button id="btn-copy-ai" class="btn-new" style="padding: 4px 10px; font-size: 0.75rem; background: rgba(124,106,255,0.1); border-color: var(--accent-primary); color: var(--accent-primary); display: none;">📋 Copy</button>
+      </div><!-- /panel-results -->
+
+      <!-- ═══ TAB: AI Copywriter ═══ -->
+      <div class="tab-page" id="panel-ai">
+        <div class="card ai-card">
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>✨ AI Social Media Copywriter</span>
+            <button id="btn-copy-ai" class="btn-new" style="padding:3px 8px; font-size:.68rem; background:rgba(255,230,0,0.08); border-color:var(--accent-primary); color:var(--accent-primary); display:none;">📋 Copy</button>
           </div>
-          <p class="field-hint" style="margin-bottom: 15px;">Buat judul viral, caption, hashtag, dan CTA otomatis berdasarkan potongan video ini.</p>
-          
-          <div class="field" style="margin-bottom: 15px;">
+          <p class="field-hint" style="margin-bottom:12px;">Buat judul viral, caption, hashtag, dan CTA otomatis.</p>
+
+          <div class="field" style="margin-bottom:12px;">
             <label for="gemini-key">Gemini API Key</label>
             <div class="input-wrap">
               <span class="input-icon">🔑</span>
@@ -657,68 +727,21 @@
             </div>
           </div>
 
-          <button type="button" class="btn-clip" id="btn-generate-ai" style="background: linear-gradient(135deg, #FFB75E 0%, #ED8F03 100%); margin-bottom: 15px; width: 100%;">
-            <div class="spinner" id="ai-spinner" style="border-top-color: #fff; display: none;"></div>
+          <button type="button" class="btn-clip" id="btn-generate-ai" style="background:var(--grad-primary); margin-bottom:12px; width:100%;">
+            <div class="spinner" id="ai-spinner" style="border-top-color:#16161a; display:none;"></div>
             <span class="btn-label" id="ai-btn-label">✨ Generate Copy</span>
           </button>
 
-          <div id="ai-result-wrap" style="display: none;">
-            <textarea id="ai-result" readonly style="width: 100%; height: 250px; background: rgba(10,12,18,0.5); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: var(--radius-md); padding: 12px; font-family: 'Inter', sans-serif; font-size: 0.9rem; resize: vertical; line-height: 1.5;"></textarea>
+          <div id="ai-result-wrap" style="display:none;">
+            <textarea id="ai-result" readonly style="width:100%; height:200px; background:rgba(10,12,18,0.5); border:1px solid var(--border-subtle); color:var(--text-primary); border-radius:var(--radius-md); padding:10px; font-family:'Inter',sans-serif; font-size:.82rem; resize:vertical; line-height:1.5;"></textarea>
           </div>
         </div>
-        
-      </div>
-    </div>
+      </div><!-- /panel-ai -->
 
-    <!-- ── Tips Card ── -->
-    <div class="card">
-      <p class="card-title">💡 Tips Penggunaan</p>
-      <div class="tips-grid">
-        <div class="tip-item">
-          <span class="tip-icon">🎯</span>
-          <div class="tip-text">
-            <h4>Format Waktu</h4>
-            <p>Gunakan <code>HH:MM:SS</code> atau angka detik seperti <code>90</code> untuk 1 menit 30 detik.</p>
-          </div>
-        </div>
-        <div class="tip-item">
-          <span class="tip-icon">⚡</span>
-          <div class="tip-text">
-            <h4>Stream Copy</h4>
-            <p>Pemotongan dilakukan tanpa re-encode — sangat cepat dan tanpa kehilangan kualitas.</p>
-          </div>
-        </div>
-        <div class="tip-item">
-          <span class="tip-icon">🌐</span>
-          <div class="tip-text">
-            <h4>Multi-Platform</h4>
-            <p>Mendukung YouTube, Twitter, Instagram, TikTok, dan 1000+ situs lainnya via yt-dlp.</p>
-          </div>
-        </div>
-        <div class="tip-item">
-          <span class="tip-icon">📁</span>
-          <div class="tip-text">
-            <h4>Output Folder</h4>
-            <p>Semua hasil clip tersimpan otomatis di folder <code>outputs/</code> di direktori aplikasi.</p>
-          </div>
-        </div>
-        <div class="tip-item">
-          <span class="tip-icon">💬</span>
-          <div class="tip-text">
-            <h4>Subtitle Otomatis</h4>
-            <p>Aktifkan subtitle untuk menyisipkan teks ke video. Mode <em>Soft</em> dapat dimatikan di player.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </main>
+    </div><!-- /panel-content -->
+  </aside><!-- /right-panel -->
 
-  <!-- ── Footer ── -->
-  <footer class="app-footer">
-    <p>Dibuat dengan ❤️ menggunakan <strong>yt-dlp</strong> &amp; <strong>FFmpeg</strong> &nbsp;|&nbsp; Berjalan lokal di mesin Anda</p>
-  </footer>
-
-</div>
+</div><!-- /dashboard -->
 
 <!-- ── Clip Details Modal ── -->
 <div id="clip-details-modal" class="modal-overlay" style="display: none;">
@@ -728,18 +751,14 @@
       <button class="modal-close" id="modal-close-btn">&times;</button>
     </div>
     <div class="modal-body">
-      <!-- Left side: Video Preview -->
       <div class="modal-video-container">
         <video id="modal-video-player" controls preload="metadata"></video>
       </div>
-      
-      <!-- Right side: AI generated Copy -->
       <div class="modal-text-container">
         <div id="modal-ai-spinner" style="display: none; text-align: center; padding: 20px;">
           <div class="spinner" style="margin: 0 auto;"></div>
-          <p style="margin-top:10px; color:var(--text-dim);">Meng-generate copy (5-15d)...</p>
+          <p style="margin-top:10px; color:var(--text-muted);">Meng-generate copy (5-15d)...</p>
         </div>
-        
         <div id="modal-ai-result" style="display: none;">
           <div class="ai-section">
             <h4>🌟 Title Hooks</h4>
@@ -757,13 +776,13 @@
             <h4>🏷️ Hashtags</h4>
             <div id="modal-hashtags" class="ai-content-box"></div>
           </div>
-          <button type="button" class="btn" id="modal-btn-copy-all" style="width: 100%; margin-top: 15px; background: var(--surface-3);">📋 Copy Semua</button>
+          <button type="button" class="btn" id="modal-btn-copy-all" style="width:100%; margin-top:12px; background:var(--bg-hover);">📋 Copy Semua</button>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

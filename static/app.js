@@ -1,4 +1,4 @@
-/* app.js — Video Clipper Frontend Logic */
+/* app.js — Video Clipper Dashboard — Frontend Logic */
 
 const $ = id => document.getElementById(id);
 
@@ -40,6 +40,24 @@ const previewVideo    = $('preview-video');
 const errorCard       = $('error-card');
 const errorMsg        = $('error-msg');
 
+// Panel-specific duplicates
+const progressFillPanel  = $('progress-fill-panel');
+const progressPctPanel   = $('progress-pct-panel');
+const statusLabelPanel   = $('status-label-panel');
+const statusPulsePanel   = $('status-pulse-panel');
+const downloadLinkPanel  = $('download-link-panel');
+
+// Workspace elements
+const videoPlaceholder     = $('video-placeholder');
+const workspaceVideoWrap   = $('workspace-video-wrap');
+const workspaceVideoPlayer = $('workspace-video-player');
+const workspaceDownloadArea = $('workspace-download-area');
+const workspaceDownloadName = $('workspace-download-name');
+const timelineInfo         = $('timeline-info');
+const timelineClipRegion   = $('timeline-clip-region');
+const timelineClipLabel    = $('timeline-clip-label');
+const timelineProgressSection = $('timeline-progress-section');
+
 // Hidden style preset inputs
 const subPrimaryColor = $('sub-primary-color');
 const subOutlineColor = $('sub-outline-color');
@@ -48,6 +66,102 @@ const subBackAlpha    = $('sub-back-alpha');
 const subBorderStyle  = $('sub-border-style');
 const subOutlineWidth = $('sub-outline-width');
 const subShadowVal    = $('sub-shadow-val');
+
+// ═══════════════════════════════════════════════════════════════════
+// DASHBOARD NAVIGATION — Sidebar + Panel Tabs + Timeline
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Sidebar Navigation ───────────────────────────────────────────
+document.querySelectorAll('.nav-item[data-target]').forEach(item => {
+  item.addEventListener('click', () => {
+    // Update active nav item
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+
+    // Show corresponding tab-page in panel-controls
+    const targetId = item.dataset.target;
+    document.querySelectorAll('#panel-controls > .tab-page').forEach(page => {
+      page.classList.toggle('active', page.id === targetId);
+    });
+
+    // Switch to Controls tab in right panel
+    switchPanelTab('panel-controls');
+  });
+});
+
+// ── Panel Tabs (Controls / Results / AI Copy) ─────────────────────
+document.querySelectorAll('.panel-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    switchPanelTab(tab.dataset.panel);
+  });
+});
+
+function switchPanelTab(panelId) {
+  document.querySelectorAll('.panel-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.panel === panelId);
+  });
+  document.querySelectorAll('.panel-content > .tab-page').forEach(p => {
+    p.classList.toggle('active', p.id === panelId);
+  });
+}
+
+// ── Generate fake timeline waveform ─────────────────────────────
+function generateWaveform() {
+  const container = $('timeline-waveform');
+  if (!container) return;
+  container.innerHTML = '';
+  const barCount = 120;
+  for (let i = 0; i < barCount; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'timeline-bar';
+    const h = Math.random() * 80 + 20;
+    bar.style.height = h + '%';
+    container.appendChild(bar);
+  }
+}
+
+// ── Highlight region on timeline ────────────────────────────────
+function highlightTimeline(startStr, endStr, totalDuration) {
+  if (!timelineClipRegion) return;
+  
+  const startSec = parseTimeToSeconds(startStr);
+  const endSec = parseTimeToSeconds(endStr);
+  const duration = totalDuration || Math.max(endSec * 1.2, 600);
+  
+  const leftPct = (startSec / duration) * 100;
+  const widthPct = ((endSec - startSec) / duration) * 100;
+  
+  timelineClipRegion.style.left = leftPct + '%';
+  timelineClipRegion.style.width = widthPct + '%';
+  timelineClipRegion.classList.add('active');
+  
+  if (timelineClipLabel) {
+    timelineClipLabel.textContent = `${startStr} → ${endStr}`;
+  }
+  
+  if (timelineInfo) {
+    timelineInfo.textContent = `${startStr} — ${endStr}`;
+  }
+}
+
+function clearTimelineHighlight() {
+  if (timelineClipRegion) {
+    timelineClipRegion.classList.remove('active');
+  }
+  if (timelineInfo) {
+    timelineInfo.textContent = '00:00:00 — 00:00:00';
+  }
+}
+
+function parseTimeToSeconds(timeStr) {
+  if (!timeStr) return 0;
+  timeStr = timeStr.trim();
+  if (/^\d+(\.\d+)?$/.test(timeStr)) return parseFloat(timeStr);
+  const parts = timeStr.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
 
 // ── Dependency Check ─────────────────────────────────────────────────────
 async function checkDeps() {
@@ -97,6 +211,16 @@ btnClip.addEventListener('click', async () => {
   errorCard.classList.remove('visible');
   terminalBody.innerHTML = '';
 
+  // Switch to Results tab
+  switchPanelTab('panel-results');
+
+  // Show progress on timeline
+  showTimelineProgress(true);
+  highlightTimeline(start, end);
+
+  // Hide placeholder, show workspace indicator
+  showWorkspacePlaceholder('processing');
+
   try {
     const subtitlePosition = document.querySelector('input[name="subtitle-position"]:checked')?.value || 'bottom';
     const hookTitleValue = $('hook-title') ? $('hook-title').value.trim() : '';
@@ -143,6 +267,7 @@ btnClip.addEventListener('click', async () => {
     if (data.error) {
       showError(data.error);
       setLoading(false);
+      showTimelineProgress(false);
       return;
     }
 
@@ -152,6 +277,7 @@ btnClip.addEventListener('click', async () => {
   } catch (err) {
     showError('Gagal menghubungi server: ' + err.message);
     setLoading(false);
+    showTimelineProgress(false);
   }
 });
 
@@ -171,6 +297,7 @@ function startSSE(taskId) {
     if (progressFill.style.width !== '100%') {
       showError('Koneksi ke server terputus.');
       setLoading(false);
+      showTimelineProgress(false);
     }
   };
 }
@@ -180,6 +307,10 @@ function handleUpdate(data) {
   const pct = data.progress || 0;
   progressFill.style.width = pct + '%';
   progressPct.textContent  = pct + '%';
+
+  // Also update panel duplicates
+  if (progressFillPanel) progressFillPanel.style.width = pct + '%';
+  if (progressPctPanel)  progressPctPanel.textContent  = pct + '%';
 
   // Status label
   const statusMap = {
@@ -194,11 +325,17 @@ function handleUpdate(data) {
     error:      '❌ Error',
   };
   statusLabel.textContent = statusMap[data.status] || data.status;
+  if (statusLabelPanel) statusLabelPanel.textContent = statusMap[data.status] || data.status;
 
   // Pulse color
   statusPulse.className = 'pulse';
   if (data.status === 'done')  statusPulse.classList.add('done');
   if (data.status === 'error') statusPulse.classList.add('error');
+  if (statusPulsePanel) {
+    statusPulsePanel.className = 'pulse';
+    if (data.status === 'done')  statusPulsePanel.classList.add('done');
+    if (data.status === 'error') statusPulsePanel.classList.add('error');
+  }
 
   // Append new log lines
   if (data.logs && data.logs.length > 0) {
@@ -210,6 +347,7 @@ function handleUpdate(data) {
     evtSource.close();
     setLoading(false);
     showDownload(data.file);
+    showTimelineProgress(false);
 
     // Otomatis generate copy jika API key sudah ada
     if (geminiKeyInput && geminiKeyInput.value.trim() !== '') {
@@ -222,6 +360,7 @@ function handleUpdate(data) {
     evtSource.close();
     setLoading(false);
     showError(data.error || 'Terjadi kesalahan.');
+    showTimelineProgress(false);
   }
 }
 
@@ -251,13 +390,19 @@ function setLoading(loading) {
 
 function showDownload(filename) {
   const fileUrl = `/download/${filename}`;
-  downloadLink.href = fileUrl;
-  downloadName.textContent = filename;
+  if (downloadLink) downloadLink.href = fileUrl;
+  if (downloadLinkPanel) downloadLinkPanel.href = fileUrl;
+  if (downloadName) downloadName.textContent = filename;
   
-  // Set preview video
-  previewVideo.src = fileUrl;
+  // Set preview video in panel
+  if (previewVideo) previewVideo.src = fileUrl;
   
+  // Show download card in panel
   downloadCard.classList.add('visible');
+
+  // Show video in main workspace
+  showWorkspaceVideo(fileUrl);
+  if (workspaceDownloadName) workspaceDownloadName.textContent = filename;
 }
 
 function showError(msg) {
@@ -274,22 +419,90 @@ function resetUI() {
   errorCard.classList.remove('visible');
   terminalBody.innerHTML   = '';
   
+  if (progressFillPanel) progressFillPanel.style.width = '0%';
+  if (progressPctPanel)  progressPctPanel.textContent  = '0%';
+  if (statusLabelPanel)  statusLabelPanel.textContent  = '⏳ Menunggu...';
+  if (statusPulsePanel)  statusPulsePanel.className    = 'pulse';
+  
   // Reset preview video
-  previewVideo.pause();
-  previewVideo.removeAttribute('src');
-  previewVideo.load();
+  if (previewVideo) {
+    previewVideo.pause();
+    previewVideo.removeAttribute('src');
+    previewVideo.load();
+  }
+
+  // Reset workspace
+  hideWorkspaceVideo();
 }
 
-// ── "Clip Lagi" button ───────────────────────────────────────────────────
-$('btn-new').addEventListener('click', () => {
+// ── Workspace Video Control ──────────────────────────────────────────────
+function showWorkspaceVideo(fileUrl) {
+  if (videoPlaceholder) videoPlaceholder.style.display = 'none';
+  if (workspaceVideoWrap) {
+    workspaceVideoWrap.classList.add('visible');
+    workspaceVideoPlayer.src = fileUrl;
+  }
+  if (workspaceDownloadArea) workspaceDownloadArea.classList.add('visible');
+}
+
+function hideWorkspaceVideo() {
+  if (workspaceVideoWrap) {
+    workspaceVideoWrap.classList.remove('visible');
+    workspaceVideoPlayer.pause();
+    workspaceVideoPlayer.removeAttribute('src');
+  }
+  if (workspaceDownloadArea) workspaceDownloadArea.classList.remove('visible');
+  if (videoPlaceholder) videoPlaceholder.style.display = 'flex';
+}
+
+function showWorkspacePlaceholder(mode) {
+  if (mode === 'processing') {
+    if (videoPlaceholder) {
+      videoPlaceholder.querySelector('.preview-placeholder-icon').textContent = '⚙️';
+      videoPlaceholder.querySelector('.preview-placeholder-text').textContent = 'Memproses video...';
+      videoPlaceholder.querySelector('.preview-placeholder-hint').textContent = 'Video preview akan muncul di sini setelah selesai.';
+    }
+    if (workspaceVideoWrap) workspaceVideoWrap.classList.remove('visible');
+    if (workspaceDownloadArea) workspaceDownloadArea.classList.remove('visible');
+  } else {
+    if (videoPlaceholder) {
+      videoPlaceholder.querySelector('.preview-placeholder-icon').textContent = '🎬';
+      videoPlaceholder.querySelector('.preview-placeholder-text').textContent = 'Masukkan URL video dan mulai scan atau potong untuk melihat preview di sini';
+      videoPlaceholder.querySelector('.preview-placeholder-hint').textContent = 'Support: YouTube, TikTok, Instagram, Twitter, dan 1000+ situs lainnya';
+    }
+  }
+}
+
+function showTimelineProgress(show) {
+  if (timelineProgressSection) {
+    timelineProgressSection.classList.toggle('visible', show);
+  }
+}
+
+// ── "Clip Lagi" buttons ───────────────────────────────────────────────────
+function handleNewClip() {
   progressSection.classList.remove('visible');
   downloadCard.classList.remove('visible');
   errorCard.classList.remove('visible');
   urlInput.value   = '';
   startInput.value = '';
   endInput.value   = '';
+  hideWorkspaceVideo();
+  showWorkspacePlaceholder('default');
+  clearTimelineHighlight();
   urlInput.focus();
-});
+}
+
+$('btn-new').addEventListener('click', handleNewClip);
+const btnNewPanel = $('btn-new-panel');
+if (btnNewPanel) btnNewPanel.addEventListener('click', handleNewClip);
+
+// Workspace download link — keep in sync
+if (downloadLink) {
+  downloadLink.addEventListener('click', (e) => {
+    // Link handled natively
+  });
+}
 
 // ── Time Input Helper: auto-format to HH:MM:SS ───────────────────────────
 function formatTimeInput(input) {
@@ -304,6 +517,11 @@ function formatTimeInput(input) {
       const m     = Math.floor((secs % 3600) / 60);
       const s     = (secs % 60).toFixed(0).padStart(2, '0');
       input.value = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${s}`;
+    }
+
+    // Update timeline when time inputs change
+    if (startInput.value && endInput.value) {
+      highlightTimeline(startInput.value, endInput.value);
     }
   });
 }
@@ -401,6 +619,9 @@ btnGenerateAi.addEventListener('click', async () => {
   aiResultWrap.style.display = 'none';
   btnCopyAi.style.display = 'none';
 
+  // Switch to AI tab
+  switchPanelTab('panel-ai');
+
   const cookies = $('manual-cookies-toggle') ? $('manual-cookies-toggle').checked : false;
 
   try {
@@ -438,13 +659,14 @@ window.addEventListener('DOMContentLoaded', () => {
   checkDeps();
   syncPositionRow();   // set initial state
   renderPresetCards(); // build CapCut-style preset cards
-  urlInput.focus();
+  generateWaveform(); // generate fake timeline waveform
+  // Don't auto-focus to prevent scroll issues in dashboard
 });
 
 // ── Subtitle Preset Cards ─────────────────────────────────────────────────
 const SUBTITLE_PRESETS = [
   {
-    id: 'none', name: 'Tanpa\nPreset',
+    id: 'none', name: 'Tanpa\\nPreset',
     preview: { text: 'Aa', color: '#888', shadow: 'none', bg: 'transparent', weight: 'normal', style: 'normal', deco: 'none' },
     params: null // don't override any params
   },
@@ -459,27 +681,27 @@ const SUBTITLE_PRESETS = [
     params: { fontSize: '26', bold: true, italic: false, underline: false, case: 'upper', primaryColor: 'FFFFFF', outlineColor: '000000', backColor: '000000', backAlpha: '00', borderStyle: '1', outlineWidth: '3', shadow: '2' }
   },
   {
-    id: 'yellow-pop', name: 'Yellow\nPop',
+    id: 'yellow-pop', name: 'Yellow\\nPop',
     preview: { text: 'AA', color: '#FFFF00', shadow: '-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000', bg: 'transparent', weight: '900', style: 'normal', deco: 'none' },
     params: { fontSize: '26', bold: true, italic: false, underline: false, case: 'upper', primaryColor: 'FFFF00', outlineColor: '000000', backColor: '000000', backAlpha: '00', borderStyle: '1', outlineWidth: '3', shadow: '2' }
   },
   {
-    id: 'white-box', name: 'White\nBox',
+    id: 'white-box', name: 'White\\nBox',
     preview: { text: 'Aa', color: '#fff', shadow: 'none', bg: 'rgba(0,0,0,0.75)', weight: 'normal', style: 'normal', deco: 'none' },
     params: { fontSize: '22', bold: false, italic: false, underline: false, case: 'normal', primaryColor: 'FFFFFF', outlineColor: '000000', backColor: '000000', backAlpha: '80', borderStyle: '3', outlineWidth: '3', shadow: '0' }
   },
   {
-    id: 'yellow-box', name: 'Yellow\nBox',
+    id: 'yellow-box', name: 'Yellow\\nBox',
     preview: { text: 'Aa', color: '#FFFF00', shadow: 'none', bg: 'rgba(0,0,0,0.85)', weight: 'bold', style: 'normal', deco: 'none' },
     params: { fontSize: '22', bold: true, italic: false, underline: false, case: 'normal', primaryColor: 'FFFF00', outlineColor: '000000', backColor: '000000', backAlpha: 'CC', borderStyle: '3', outlineWidth: '3', shadow: '0' }
   },
   {
-    id: 'black-white-box', name: 'White Box\nBlack Text',
+    id: 'black-white-box', name: 'White Box\\nBlack Text',
     preview: { text: 'Aa', color: '#000', shadow: 'none', bg: '#fff', weight: 'bold', style: 'normal', deco: 'none' },
     params: { fontSize: '22', bold: true, italic: false, underline: false, case: 'upper', primaryColor: '000000', outlineColor: 'FFFFFF', backColor: 'FFFFFF', backAlpha: '00', borderStyle: '3', outlineWidth: '3', shadow: '0' }
   },
   {
-    id: 'neon', name: 'Neon\nGlow',
+    id: 'neon', name: 'Neon\\nGlow',
     preview: { text: 'AA', color: '#00FFFF', shadow: '0 0 6px #00FFFF,0 0 14px #00FFFF', bg: 'transparent', weight: 'bold', style: 'normal', deco: 'none' },
     params: { fontSize: '24', bold: true, italic: false, underline: false, case: 'upper', primaryColor: '00FFFF', outlineColor: '003333', backColor: '000000', backAlpha: '00', borderStyle: '1', outlineWidth: '2', shadow: '5' }
   },
@@ -489,7 +711,7 @@ const SUBTITLE_PRESETS = [
     params: { fontSize: '20', bold: false, italic: true, underline: false, case: 'normal', primaryColor: 'FFFFFF', outlineColor: '000000', backColor: '000000', backAlpha: '00', borderStyle: '1', outlineWidth: '1', shadow: '5' }
   },
   {
-    id: 'tiktok', name: 'TikTok\nRed',
+    id: 'tiktok', name: 'TikTok\\nRed',
     preview: { text: 'AA', color: '#FF3B5C', shadow: '-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff', bg: 'transparent', weight: '900', style: 'normal', deco: 'none' },
     params: { fontSize: '26', bold: true, italic: false, underline: false, case: 'upper', primaryColor: 'FF3B5C', outlineColor: 'FFFFFF', backColor: '000000', backAlpha: '00', borderStyle: '1', outlineWidth: '2', shadow: '0' }
   },
@@ -678,6 +900,9 @@ if (btnScan) {
     setScanLoading(true);
     showScanStatus('loading', '⏳ Menganalisis video dan mendeteksi momen kontroversial...');
 
+    // Show processing in workspace
+    showWorkspacePlaceholder('processing');
+
     try {
       const subtitleLangVal = $('ctrl-subtitle-lang') ? $('ctrl-subtitle-lang').value : 'id,en';
       const res  = await fetch('/detect-moments', {
@@ -689,12 +914,14 @@ if (btnScan) {
 
       if (!res.ok || data.error) {
         showScanStatus('error', '❌ ' + (data.error || 'Terjadi kesalahan.'));
+        showWorkspacePlaceholder('default');
         return;
       }
 
       detectedMoments = data.moments || [];
       if (detectedMoments.length === 0) {
         showScanStatus('error', '❌ AI tidak dapat menemukan momen. Coba lagi.');
+        showWorkspacePlaceholder('default');
         return;
       }
 
@@ -722,8 +949,21 @@ if (btnScan) {
       detectedMoments.forEach(m => selectedMoments.add(m.index));
       syncMomentSelection();
 
+      // Switch to Results tab to show moments
+      switchPanelTab('panel-results');
+
+      // Highlight first moment on timeline
+      if (detectedMoments.length > 0) {
+        const m = detectedMoments[0];
+        highlightTimeline(m.start, m.end);
+      }
+
+      // Reset workspace to default
+      showWorkspacePlaceholder('default');
+
     } catch (err) {
       showScanStatus('error', '❌ Gagal menghubungi server: ' + err.message);
+      showWorkspacePlaceholder('default');
     } finally {
       setScanLoading(false);
     }
@@ -742,7 +982,7 @@ function renderMomentCards(moments) {
       <div class="moment-card-check">✓</div>
       <div class="moment-card-index">${m.index}</div>
       <div class="moment-card-info">
-        <p class="moment-card-title">${escHtml(m.title)}</p>
+        <p class="moment-card-title">${escHtml(m.title)} <span class="viral-badge">🔥 VIRAL</span></p>
         <p class="moment-card-time">⏱ ${m.start} → ${m.end}</p>
         <p class="moment-card-reason">${escHtml(m.reason)}</p>
       </div>
@@ -758,6 +998,9 @@ function renderMomentCards(moments) {
         card.classList.add('selected');
       }
       updateClipMomentsBtn();
+
+      // Highlight on timeline when clicking a moment
+      highlightTimeline(m.start, m.end);
     });
 
     momentCardsList.appendChild(card);
@@ -815,6 +1058,9 @@ if (btnClipMoments) {
     btnClipMoments.disabled = true;
     btnClipMoments.classList.add('loading');
 
+    // Show processing in workspace
+    showWorkspacePlaceholder('processing');
+
     try {
       const res = await fetch('/clip-moments', {
         method:  'POST',
@@ -852,6 +1098,7 @@ if (btnClipMoments) {
         alert('Error: ' + (data.error || 'Terjadi kesalahan.'));
         btnClipMoments.disabled = false;
         btnClipMoments.classList.remove('loading');
+        showWorkspacePlaceholder('default');
         return;
       }
 
@@ -873,6 +1120,7 @@ if (btnClipMoments) {
       alert('Gagal menghubungi server: ' + err.message);
       btnClipMoments.disabled = false;
       btnClipMoments.classList.remove('loading');
+      showWorkspacePlaceholder('default');
     }
   });
 }
@@ -950,6 +1198,7 @@ function startBatchPolling() {
           batchProgressArea.style.display    = 'none';
           batchDownloadGallery.style.display = 'block';
           renderBatchGallery(batchTaskList);
+          showWorkspacePlaceholder('default');
         }, 800);
       }
 
@@ -965,7 +1214,7 @@ function renderBatchGallery(tasks) {
   const successTasks = tasks.filter(t => t.output_file);
 
   if (successTasks.length === 0) {
-    batchClipsGrid.innerHTML = '<p style="color:var(--accent-danger); font-size:.88rem;">Semua klip gagal diproses.</p>';
+    batchClipsGrid.innerHTML = '<p style="color:var(--accent-danger); font-size:.82rem;">Semua klip gagal diproses.</p>';
     return;
   }
 
@@ -978,12 +1227,19 @@ function renderBatchGallery(tasks) {
       <div class="batch-clip-info">
         <p class="batch-clip-title">${escHtml(t.title || `Momen ${t.moment_index}`)}</p>
         <p class="batch-clip-time">⏱ ${t.start} → ${t.end}</p>
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <div style="display: flex; gap: 6px; margin-top: 8px;">
           <a href="${fileUrl}" download class="batch-clip-download" style="flex:1; text-align:center;">⬇️ Download</a>
           <button type="button" class="btn batch-clip-detail-btn" style="flex:1; padding: 6px;" onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index})">✨ Detail</button>
         </div>
       </div>
     `;
+
+    // Click on video in gallery -> play in workspace
+    card.querySelector('.batch-clip-video').addEventListener('click', () => {
+      showWorkspaceVideo(fileUrl);
+      highlightTimeline(t.start, t.end);
+    });
+
     batchClipsGrid.appendChild(card);
   });
 }
@@ -1004,6 +1260,10 @@ function resetControversialUI() {
   if (ctrlUrlInput)          ctrlUrlInput.value  = '';
   if (btnClipMoments)        btnClipMoments.classList.remove('loading');
   if (btnClipMoments)        btnClipMoments.disabled = false;
+
+  hideWorkspaceVideo();
+  showWorkspacePlaceholder('default');
+  clearTimelineHighlight();
 }
 
 if (btnBatchNew)   btnBatchNew.addEventListener('click',   resetControversialUI);
@@ -1179,13 +1439,13 @@ if (btnUploadCookies) {
       const res = await fetch('/upload-cookies', { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok) {
-        cookiesStatus.innerHTML = `<span style="color:var(--text-main);">✅ Berhasil: ${data.message}</span>`;
+        cookiesStatus.innerHTML = `<span style="color:var(--accent-success);">✅ Berhasil: ${data.message}</span>`;
         checkCookiesStatus();
       } else {
-        cookiesStatus.innerHTML = `<span style="color:var(--accent-red);">❌ Gagal: ${data.error}</span>`;
+        cookiesStatus.innerHTML = `<span style="color:var(--accent-danger);">❌ Gagal: ${data.error}</span>`;
       }
     } catch (err) {
-      cookiesStatus.innerHTML = `<span style="color:var(--accent-red);">❌ Error: ${err.message}</span>`;
+      cookiesStatus.innerHTML = `<span style="color:var(--accent-danger);">❌ Error: ${err.message}</span>`;
     } finally {
       btnUploadCookies.disabled = false;
       cookiesSpinner.style.display = "none";
@@ -1202,9 +1462,9 @@ async function checkCookiesStatus() {
     const data = await res.json();
     if (cookiesStatus) {
       if (data.exists) {
-        cookiesStatus.innerHTML = `<span style="color:var(--text-main);">✅ Status: cookies.txt sudah tersedia di server. Anda siap memotong video!</span>`;
+        cookiesStatus.innerHTML = `<span style="color:var(--accent-success);">✅ cookies.txt tersedia di server.</span>`;
       } else {
-        cookiesStatus.innerHTML = `<span style="color:var(--text-muted);">❌ Status: cookies.txt belum diupload. YouTube mungkin akan memblokir Anda.</span>`;
+        cookiesStatus.innerHTML = `<span style="color:var(--text-muted);">❌ cookies.txt belum diupload.</span>`;
       }
     }
   } catch (err) {}
