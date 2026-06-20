@@ -896,7 +896,7 @@ body {
   opacity: .85;
 }
 
-.bottom-bar { bottom: 5px; }
+.bottom-bar { bottom: 1px; }
 .center-bar { top: 50%; transform: translateY(-50%); }
 
 .pos-btn input:checked + .pos-card .pos-bar {

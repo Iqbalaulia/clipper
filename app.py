@@ -689,6 +689,9 @@ Temukan tepat {num_moments} momen terbaik yang:
 5. START dan END HARUS dalam format HH:MM:SS
 6. Setiap klip HARUS berupa 1 konteks penuh: jangan potong di tengah kalimat. Pilih START di awal kalimat dan END di akhir kalimat yang masuk akal. Jika perlu, perpanjang sedikit agar kalimat terakhir selesai.
 7. Jika momen berisi percakapan, pastikan klip berakhir setelah penutup/pernyataan penting, bukan di tengah jawaban.
+8. START harus dimulai tepat pada kalimat pemantik (Hook) yang langsung menarik perhatian, hindari jeda kosong atau kata kerja transisi yang tidak penting di 3 detik pertama.
+9. Jika momen berupa plot twist atau pertanyaan kontroversial, klip boleh diakhiri tepat setelah klimaks/pertanyaan menggantung tersebut untuk memicu rasa penasaran (looping video) atau perdebatan di kolom komentar.
+10. Pilih momen dengan retorika yang padat, intonasi tinggi/bersemangat, atau ekspresi emosional yang kuat.
 
 RETURN JSON OBJECT dengan key 'moments' berisi array {num_moments} objek, masing-masing:
 {{
