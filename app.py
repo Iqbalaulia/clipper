@@ -130,6 +130,7 @@ def clip():
     hook_title        = (data.get("hook_title") or "").strip()
     hook_fontsize     = str(data.get("hook_fontsize") or "34").strip()
     hook_preset       = (data.get("hook_preset") or "yellow-pop").strip()
+    hook_position     = (data.get("hook_position") or "top").strip()
     
     cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
 
@@ -162,6 +163,7 @@ def clip():
         hook_title=hook_title,
         hook_fontsize=hook_fontsize,
         hook_preset=hook_preset,
+        hook_position=hook_position,
         cookies=cookies_file,
     )
 

@@ -102,6 +102,7 @@ btnClip.addEventListener('click', async () => {
     const hookTitleValue = $('hook-title') ? $('hook-title').value.trim() : '';
     const hookFontsize = $('hook-fontsize') ? $('hook-fontsize').value : "34";
     const hookPreset = $('hook-style') ? $('hook-style').value : "yellow-pop";
+    const hookPosition = $('hook-position') ? $('hook-position').value : "top";
     
     let finalSubType = subtitleType ? subtitleType.value : 'soft';
 
@@ -113,6 +114,7 @@ btnClip.addEventListener('click', async () => {
         hook_title:        hookTitleValue,
         hook_fontsize:     hookFontsize,
         hook_preset:       hookPreset,
+        hook_position:     hookPosition,
 
         subtitle_enabled:  subtitleToggle ? subtitleToggle.checked : false,
         subtitle_lang:     subtitleLang   ? subtitleLang.value     : 'id,en',

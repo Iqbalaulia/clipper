@@ -387,7 +387,18 @@
                 <label for="hook-fontsize" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Ukuran Font</label>
                 <div class="input-wrap">
                   <input type="number" id="hook-fontsize" value="46" min="24" max="100" style="padding: 8px 12px; font-size: 0.9rem;" />
-
+                </div>
+              </div>
+              <!-- Hook Position -->
+              <div style="flex: 1;">
+                <label for="hook-position" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display: block;">Posisi Judul</label>
+                <div class="input-wrap select-wrap">
+                  <span class="input-icon">📍</span>
+                  <select id="hook-position" style="padding: 8px 12px; font-size: 0.9rem; border: none; outline: none; background: transparent; width: 100%; color: var(--text-main);">
+                    <option value="top">Atas</option>
+                    <option value="center">Tengah</option>
+                    <option value="bottom">Bawah</option>
+                  </select>
                 </div>
               </div>
               <!-- Hook Style -->
