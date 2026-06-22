@@ -79,30 +79,78 @@
   <!-- ═══ MAIN WORKSPACE (CENTER) ═══ -->
   <section class="workspace-main">
 
-    <!-- Video Preview Area -->
+    <!-- Video Preview Area — 4 States -->
     <div class="video-preview-area" id="video-preview-area">
-      <!-- Placeholder shown initially -->
-      <div class="video-preview-placeholder" id="video-placeholder">
-        <div class="preview-placeholder-icon">🎬</div>
-        <p class="preview-placeholder-text">Masukkan URL video dan mulai scan atau potong untuk melihat preview di sini</p>
-        <p class="preview-placeholder-hint">Support: YouTube, TikTok, Instagram, Twitter, dan 1000+ situs lainnya</p>
-      </div>
 
-      <!-- Actual video player (hidden until clip is ready) -->
-      <div class="workspace-video-wrap" id="workspace-video-wrap">
-        <video id="workspace-video-player" controls preload="metadata"></video>
-      </div>
-
-      <!-- Download area overlay -->
-      <div class="workspace-download-area" id="workspace-download-area">
-        <span style="font-size:3rem;">🎉</span>
-        <h3 style="color:var(--accent-success); font-size:1.1rem; font-weight:700;">Video Berhasil Dipotong!</h3>
-        <p id="workspace-download-name" style="font-family:'JetBrains Mono',monospace; font-size:.82rem; color:var(--accent-success);"></p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-          <a id="download-link" href="#" class="btn-download" download>⬇️ &nbsp;Simpan File</a>
-          <button class="btn-new" id="btn-new">+ Clip Baru</button>
+      <!-- STATE 1: Empty Placeholder -->
+      <div class="ws-state ws-empty active" id="ws-empty">
+        <div class="ws-empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7"/>
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+        </div>
+        <p class="ws-empty-title">Mulai dengan Memasukkan URL</p>
+        <p class="ws-empty-hint" id="ws-empty-hint">Paste URL video dari YouTube, TikTok, Instagram, atau 1000+ platform lainnya</p>
+        <div class="ws-empty-chips">
+          <span class="ws-chip">▶ YouTube</span>
+          <span class="ws-chip">♪ TikTok</span>
+          <span class="ws-chip">📸 Instagram</span>
+          <span class="ws-chip">𝕏 Twitter</span>
         </div>
       </div>
+
+      <!-- STATE 2: Video Info Preview -->
+      <div class="ws-state ws-info" id="ws-info">
+        <img class="ws-info-thumb" id="ws-info-thumb" src="" alt="thumbnail" />
+        <div class="ws-info-overlay">
+          <div class="ws-info-meta">
+            <p class="ws-info-title" id="ws-info-title"></p>
+            <p class="ws-info-channel" id="ws-info-channel"></p>
+            <div class="ws-info-stats">
+              <span class="ws-info-stat" id="ws-info-duration">⏱ 00:00:00</span>
+              <span class="ws-info-stat" id="ws-info-views">👁 0</span>
+            </div>
+          </div>
+        </div>
+        <div class="ws-info-badge">✅ Video siap diproses</div>
+      </div>
+
+      <!-- STATE 3: Processing Overlay -->
+      <div class="ws-state ws-processing" id="ws-processing">
+        <img class="ws-processing-thumb" id="ws-processing-thumb" src="" alt="" />
+        <div class="ws-processing-overlay">
+          <div class="ws-processing-ring">
+            <svg class="ws-ring-svg" viewBox="0 0 100 100">
+              <circle class="ws-ring-bg" cx="50" cy="50" r="42" />
+              <circle class="ws-ring-progress" id="ws-ring-progress" cx="50" cy="50" r="42" />
+            </svg>
+            <span class="ws-ring-pct" id="ws-ring-pct">0%</span>
+          </div>
+          <p class="ws-processing-status" id="ws-processing-status">⏳ Memproses video...</p>
+          <p class="ws-processing-substatus" id="ws-processing-substatus">Mohon tunggu sebentar</p>
+        </div>
+      </div>
+
+      <!-- STATE 4: Video Player (result) -->
+      <div class="ws-state ws-player" id="ws-player">
+        <video id="workspace-video-player" controls preload="metadata"></video>
+        <div class="ws-player-actions" id="ws-player-actions">
+          <a id="download-link" href="#" class="ws-player-btn ws-btn-download" download>⬇️ Simpan File</a>
+          <button class="ws-player-btn ws-btn-new" id="btn-new">+ Clip Baru</button>
+        </div>
+        <p class="ws-player-filename" id="ws-player-filename"></p>
+      </div>
+
+      <!-- STATE 5: Batch Gallery (results from auto-clip) -->
+      <div class="ws-state ws-gallery" id="ws-gallery">
+        <div class="ws-gallery-header">
+          <span class="ws-gallery-icon">🎉</span>
+          <p class="ws-gallery-title" id="ws-gallery-title">Semua Klip Berhasil!</p>
+        </div>
+        <div class="ws-gallery-grid" id="ws-gallery-grid"></div>
+      </div>
+
     </div>
 
     <!-- Video Timeline -->

@@ -87,6 +87,60 @@ def check_deps():
     return jsonify(results)
 
 
+@app.route("/video-info", methods=["POST"])
+def video_info():
+    """Fetch video metadata (thumbnail, title, duration, channel) without downloading."""
+    data = request.get_json(force=True)
+    url = (data.get("url") or "").strip()
+
+    if not url:
+        return jsonify({"error": "URL wajib diisi."}), 400
+
+    try:
+        cmd = [
+            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist",
+            "--no-check-certificates",
+        ]
+        if os.path.isfile(COOKIES_FILE):
+            cmd += ["--cookies", COOKIES_FILE]
+        cmd.append(url)
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return jsonify({"error": "Gagal mengambil info video."}), 400
+
+        info = json.loads(r.stdout)
+
+        # Pick best thumbnail
+        thumbnail = info.get("thumbnail", "")
+        thumbnails = info.get("thumbnails") or []
+        if thumbnails:
+            # Prefer high-res thumbnail
+            for t in reversed(thumbnails):
+                if t.get("url"):
+                    thumbnail = t["url"]
+                    break
+
+        duration_secs = int(info.get("duration") or 0)
+        duration_str = f"{duration_secs // 3600:02d}:{(duration_secs % 3600) // 60:02d}:{duration_secs % 60:02d}"
+
+        return jsonify({
+            "title": info.get("title", "Video Tanpa Judul"),
+            "channel": info.get("uploader") or info.get("channel") or "Unknown",
+            "duration": duration_secs,
+            "duration_str": duration_str,
+            "thumbnail": thumbnail,
+            "view_count": info.get("view_count", 0),
+            "like_count": info.get("like_count", 0),
+            "upload_date": info.get("upload_date", ""),
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Timeout saat mengambil info video."}), 408
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/clip", methods=["POST"])
 def clip():
     """Start a clip task. Returns task_id immediately."""

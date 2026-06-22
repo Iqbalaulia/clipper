@@ -47,16 +47,21 @@ const statusLabelPanel   = $('status-label-panel');
 const statusPulsePanel   = $('status-pulse-panel');
 const downloadLinkPanel  = $('download-link-panel');
 
-// Workspace elements
-const videoPlaceholder     = $('video-placeholder');
-const workspaceVideoWrap   = $('workspace-video-wrap');
+// Workspace state elements
+const wsEmpty              = $('ws-empty');
+const wsInfo               = $('ws-info');
+const wsProcessing         = $('ws-processing');
+const wsPlayer             = $('ws-player');
+const wsGallery            = $('ws-gallery');
 const workspaceVideoPlayer = $('workspace-video-player');
-const workspaceDownloadArea = $('workspace-download-area');
-const workspaceDownloadName = $('workspace-download-name');
 const timelineInfo         = $('timeline-info');
 const timelineClipRegion   = $('timeline-clip-region');
 const timelineClipLabel    = $('timeline-clip-label');
 const timelineProgressSection = $('timeline-progress-section');
+
+// Workspace info cache
+let cachedVideoInfo = null;
+let videoInfoFetchController = null;
 
 // Hidden style preset inputs
 const subPrimaryColor = $('sub-primary-color');
@@ -218,8 +223,8 @@ btnClip.addEventListener('click', async () => {
   showTimelineProgress(true);
   highlightTimeline(start, end);
 
-  // Hide placeholder, show workspace indicator
-  showWorkspacePlaceholder('processing');
+  // Switch workspace to processing state
+  showWorkspaceProcessing();
 
   try {
     const subtitlePosition = document.querySelector('input[name="subtitle-position"]:checked')?.value || 'bottom';
@@ -337,6 +342,9 @@ function handleUpdate(data) {
     if (data.status === 'error') statusPulsePanel.classList.add('error');
   }
 
+  // Update workspace processing state
+  updateWorkspaceProgress(pct, statusMap[data.status] || data.status, data.status);
+
   // Append new log lines
   if (data.logs && data.logs.length > 0) {
     data.logs.forEach(line => appendLog(line));
@@ -361,6 +369,12 @@ function handleUpdate(data) {
     setLoading(false);
     showError(data.error || 'Terjadi kesalahan.');
     showTimelineProgress(false);
+    // Go back to info or empty
+    if (cachedVideoInfo) {
+      switchWorkspaceState('info');
+    } else {
+      switchWorkspaceState('empty');
+    }
   }
 }
 
@@ -400,9 +414,8 @@ function showDownload(filename) {
   // Show download card in panel
   downloadCard.classList.add('visible');
 
-  // Show video in main workspace
-  showWorkspaceVideo(fileUrl);
-  if (workspaceDownloadName) workspaceDownloadName.textContent = filename;
+  // Show video in main workspace player state
+  showWorkspacePlayer(fileUrl, filename);
 }
 
 function showError(msg) {
@@ -430,47 +443,150 @@ function resetUI() {
     previewVideo.removeAttribute('src');
     previewVideo.load();
   }
-
-  // Reset workspace
-  hideWorkspaceVideo();
 }
 
-// ── Workspace Video Control ──────────────────────────────────────────────
-function showWorkspaceVideo(fileUrl) {
-  if (videoPlaceholder) videoPlaceholder.style.display = 'none';
-  if (workspaceVideoWrap) {
-    workspaceVideoWrap.classList.add('visible');
+// ═══════════════════════════════════════════════════════════════════
+// WORKSPACE STATE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════
+
+function switchWorkspaceState(state) {
+  // state: 'empty', 'info', 'processing', 'player', 'gallery'
+  const states = [wsEmpty, wsInfo, wsProcessing, wsPlayer, wsGallery];
+  const map = { empty: wsEmpty, info: wsInfo, processing: wsProcessing, player: wsPlayer, gallery: wsGallery };
+  
+  // Pause any playing video when leaving player state
+  if (workspaceVideoPlayer && !map[state]?.classList.contains('active')) {
+    workspaceVideoPlayer.pause();
+  }
+  
+  states.forEach(el => { if (el) el.classList.remove('active'); });
+  const target = map[state];
+  if (target) target.classList.add('active');
+}
+
+// ── Show video info in workspace ─────────────────────────────────────────
+function showWorkspaceInfo(info) {
+  cachedVideoInfo = info;
+  const thumb = $('ws-info-thumb');
+  const title = $('ws-info-title');
+  const channel = $('ws-info-channel');
+  const duration = $('ws-info-duration');
+  const views = $('ws-info-views');
+  
+  if (thumb) thumb.src = info.thumbnail || '';
+  if (title) title.textContent = info.title || 'Video';
+  if (channel) channel.textContent = info.channel || '';
+  if (duration) duration.textContent = `⏱ ${info.duration_str || '00:00:00'}`;
+  if (views) {
+    const vc = info.view_count || 0;
+    const formatted = vc >= 1000000 ? (vc / 1000000).toFixed(1) + 'M'
+                    : vc >= 1000 ? (vc / 1000).toFixed(1) + 'K'
+                    : String(vc);
+    views.textContent = `👁 ${formatted}`;
+  }
+  
+  switchWorkspaceState('info');
+}
+
+// ── Show processing state ────────────────────────────────────────────────
+function showWorkspaceProcessing() {
+  // Transfer thumbnail from info state
+  const processingThumb = $('ws-processing-thumb');
+  if (processingThumb && cachedVideoInfo?.thumbnail) {
+    processingThumb.src = cachedVideoInfo.thumbnail;
+  } else if (processingThumb) {
+    processingThumb.src = '';
+  }
+  
+  // Reset progress ring
+  updateWorkspaceProgress(0, '⏳ Memproses video...', 'pending');
+  switchWorkspaceState('processing');
+}
+
+// ── Update processing progress ring ──────────────────────────────────────
+function updateWorkspaceProgress(pct, statusText, status) {
+  const ring = $('ws-ring-progress');
+  const ringPct = $('ws-ring-pct');
+  const statusEl = $('ws-processing-status');
+  const substatusEl = $('ws-processing-substatus');
+  
+  if (ring) {
+    const circumference = 2 * Math.PI * 42; // r=42
+    const offset = circumference - (pct / 100) * circumference;
+    ring.style.strokeDashoffset = offset;
+  }
+  if (ringPct) ringPct.textContent = pct + '%';
+  if (statusEl) statusEl.textContent = statusText;
+  
+  // Substatus hints
+  if (substatusEl) {
+    const hints = {
+      pending: 'Menyiapkan...',
+      downloading: 'Mengunduh dari server...',
+      subtitles: 'Mengekstrak dan memproses subtitle...',
+      tracking: 'Mendeteksi wajah dan melacak posisi...',
+      cutting: 'Memotong segmen video...',
+      embedding: 'Menyisipkan subtitle ke video...',
+      processing: 'Rendering video output...',
+      done: 'Proses selesai!',
+      error: 'Terjadi kesalahan.',
+    };
+    substatusEl.textContent = hints[status] || 'Mohon tunggu...';
+  }
+}
+
+// ── Show video player state ──────────────────────────────────────────────
+function showWorkspacePlayer(fileUrl, filename) {
+  if (workspaceVideoPlayer) {
     workspaceVideoPlayer.src = fileUrl;
   }
-  if (workspaceDownloadArea) workspaceDownloadArea.classList.add('visible');
+  const filenameEl = $('ws-player-filename');
+  if (filenameEl) filenameEl.textContent = filename || '';
+  
+  if (downloadLink) downloadLink.href = fileUrl;
+  
+  switchWorkspaceState('player');
 }
 
-function hideWorkspaceVideo() {
-  if (workspaceVideoWrap) {
-    workspaceVideoWrap.classList.remove('visible');
-    workspaceVideoPlayer.pause();
-    workspaceVideoPlayer.removeAttribute('src');
+// ── Show gallery state ───────────────────────────────────────────────────
+function showWorkspaceGallery(tasks) {
+  const grid = $('ws-gallery-grid');
+  const titleEl = $('ws-gallery-title');
+  if (!grid) return;
+  
+  grid.innerHTML = '';
+  const successTasks = tasks.filter(t => t.output_file);
+  
+  if (titleEl) {
+    titleEl.textContent = `${successTasks.length} Klip Berhasil!`;
   }
-  if (workspaceDownloadArea) workspaceDownloadArea.classList.remove('visible');
-  if (videoPlaceholder) videoPlaceholder.style.display = 'flex';
-}
-
-function showWorkspacePlaceholder(mode) {
-  if (mode === 'processing') {
-    if (videoPlaceholder) {
-      videoPlaceholder.querySelector('.preview-placeholder-icon').textContent = '⚙️';
-      videoPlaceholder.querySelector('.preview-placeholder-text').textContent = 'Memproses video...';
-      videoPlaceholder.querySelector('.preview-placeholder-hint').textContent = 'Video preview akan muncul di sini setelah selesai.';
-    }
-    if (workspaceVideoWrap) workspaceVideoWrap.classList.remove('visible');
-    if (workspaceDownloadArea) workspaceDownloadArea.classList.remove('visible');
-  } else {
-    if (videoPlaceholder) {
-      videoPlaceholder.querySelector('.preview-placeholder-icon').textContent = '🎬';
-      videoPlaceholder.querySelector('.preview-placeholder-text').textContent = 'Masukkan URL video dan mulai scan atau potong untuk melihat preview di sini';
-      videoPlaceholder.querySelector('.preview-placeholder-hint').textContent = 'Support: YouTube, TikTok, Instagram, Twitter, dan 1000+ situs lainnya';
-    }
-  }
+  
+  successTasks.forEach(t => {
+    const fileUrl = `/download/${t.output_file}`;
+    const card = document.createElement('div');
+    card.className = 'ws-gallery-card';
+    card.innerHTML = `
+      <video src="${fileUrl}" preload="metadata" muted></video>
+      <div class="ws-gallery-card-info">
+        <p class="ws-gallery-card-title">${escHtml(t.title || `Momen ${t.moment_index}`)}</p>
+        <p class="ws-gallery-card-time">⏱ ${t.start} → ${t.end}</p>
+        <div class="ws-gallery-card-actions">
+          <a href="${fileUrl}" download>⬇️ Download</a>
+          <button onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index})">✨ Detail</button>
+        </div>
+      </div>
+    `;
+    
+    // Click video thumbnail to play in workspace player
+    card.querySelector('video').addEventListener('click', () => {
+      showWorkspacePlayer(fileUrl, t.output_file);
+      highlightTimeline(t.start, t.end);
+    });
+    
+    grid.appendChild(card);
+  });
+  
+  switchWorkspaceState('gallery');
 }
 
 function showTimelineProgress(show) {
@@ -478,6 +594,101 @@ function showTimelineProgress(show) {
     timelineProgressSection.classList.toggle('visible', show);
   }
 }
+
+// ── Auto-fetch video info on URL input ────────────────────────────────────
+let urlFetchTimeout = null;
+
+function setupUrlAutoFetch(inputEl) {
+  if (!inputEl) return;
+  
+  inputEl.addEventListener('blur', () => {
+    const url = inputEl.value.trim();
+    if (url && url.startsWith('http')) {
+      triggerVideoInfoFetch(url);
+    }
+  });
+  
+  inputEl.addEventListener('input', () => {
+    if (urlFetchTimeout) clearTimeout(urlFetchTimeout);
+    const url = inputEl.value.trim();
+    if (url && url.startsWith('http') && url.length > 15) {
+      urlFetchTimeout = setTimeout(() => triggerVideoInfoFetch(url), 1200);
+    }
+  });
+  
+  // Handle paste event for instant feedback
+  inputEl.addEventListener('paste', () => {
+    setTimeout(() => {
+      const url = inputEl.value.trim();
+      if (url && url.startsWith('http')) {
+        triggerVideoInfoFetch(url);
+      }
+    }, 100);
+  });
+}
+
+async function triggerVideoInfoFetch(url) {
+  // Don't re-fetch if we already have info for this URL
+  if (cachedVideoInfo && cachedVideoInfo._url === url) {
+    switchWorkspaceState('info');
+    return;
+  }
+  
+  // Abort previous fetch
+  if (videoInfoFetchController) videoInfoFetchController.abort();
+  videoInfoFetchController = new AbortController();
+  
+  // Show loading in workspace
+  switchWorkspaceState('empty');
+  const emptyTitle = wsEmpty?.querySelector('.ws-empty-title');
+  const emptyHint = wsEmpty?.querySelector('.ws-empty-hint');
+  const emptyIcon = wsEmpty?.querySelector('.ws-empty-icon');
+  if (emptyTitle) emptyTitle.textContent = 'Mengambil info video...';
+  if (emptyHint) emptyHint.textContent = 'Memuat thumbnail dan metadata...';
+  if (emptyIcon) emptyIcon.style.animationDuration = '1s';
+  
+  try {
+    const res = await fetch('/video-info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: videoInfoFetchController.signal,
+    });
+    const data = await res.json();
+    
+    if (data.error) {
+      resetEmptyState();
+      return;
+    }
+    
+    data._url = url; // Cache the URL
+    showWorkspaceInfo(data);
+    
+    // Also update timeline with duration info
+    if (timelineInfo) {
+      timelineInfo.textContent = `00:00:00 — ${data.duration_str || '00:00:00'}`;
+    }
+    
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      resetEmptyState();
+    }
+  }
+}
+
+function resetEmptyState() {
+  const emptyTitle = wsEmpty?.querySelector('.ws-empty-title');
+  const emptyHint = wsEmpty?.querySelector('.ws-empty-hint');
+  const emptyIcon = wsEmpty?.querySelector('.ws-empty-icon');
+  if (emptyTitle) emptyTitle.textContent = 'Mulai dengan Memasukkan URL';
+  if (emptyHint) emptyHint.textContent = 'Paste URL video dari YouTube, TikTok, Instagram, atau 1000+ platform lainnya';
+  if (emptyIcon) emptyIcon.style.animationDuration = '3s';
+  switchWorkspaceState('empty');
+}
+
+// Setup auto-fetch on both URL inputs
+setupUrlAutoFetch(urlInput);
+setupUrlAutoFetch($('ctrl-url'));
 
 // ── "Clip Lagi" buttons ───────────────────────────────────────────────────
 function handleNewClip() {
@@ -487,8 +698,15 @@ function handleNewClip() {
   urlInput.value   = '';
   startInput.value = '';
   endInput.value   = '';
-  hideWorkspaceVideo();
-  showWorkspacePlaceholder('default');
+  cachedVideoInfo  = null;
+  
+  // Reset workspace video player
+  if (workspaceVideoPlayer) {
+    workspaceVideoPlayer.pause();
+    workspaceVideoPlayer.removeAttribute('src');
+  }
+  
+  resetEmptyState();
   clearTimelineHighlight();
   urlInput.focus();
 }
@@ -496,13 +714,6 @@ function handleNewClip() {
 $('btn-new').addEventListener('click', handleNewClip);
 const btnNewPanel = $('btn-new-panel');
 if (btnNewPanel) btnNewPanel.addEventListener('click', handleNewClip);
-
-// Workspace download link — keep in sync
-if (downloadLink) {
-  downloadLink.addEventListener('click', (e) => {
-    // Link handled natively
-  });
-}
 
 // ── Time Input Helper: auto-format to HH:MM:SS ───────────────────────────
 function formatTimeInput(input) {
@@ -901,7 +1112,7 @@ if (btnScan) {
     showScanStatus('loading', '⏳ Menganalisis video dan mendeteksi momen kontroversial...');
 
     // Show processing in workspace
-    showWorkspacePlaceholder('processing');
+    showWorkspaceProcessing();
 
     try {
       const subtitleLangVal = $('ctrl-subtitle-lang') ? $('ctrl-subtitle-lang').value : 'id,en';
@@ -914,7 +1125,7 @@ if (btnScan) {
 
       if (!res.ok || data.error) {
         showScanStatus('error', '❌ ' + (data.error || 'Terjadi kesalahan.'));
-        showWorkspacePlaceholder('default');
+        if (cachedVideoInfo) switchWorkspaceState('info'); else resetEmptyState();
         return;
       }
 
@@ -958,8 +1169,8 @@ if (btnScan) {
         highlightTimeline(m.start, m.end);
       }
 
-      // Reset workspace to default
-      showWorkspacePlaceholder('default');
+      // Restore workspace to info if available
+      if (cachedVideoInfo) switchWorkspaceState('info'); else resetEmptyState();
 
     } catch (err) {
       showScanStatus('error', '❌ Gagal menghubungi server: ' + err.message);
@@ -1059,7 +1270,7 @@ if (btnClipMoments) {
     btnClipMoments.classList.add('loading');
 
     // Show processing in workspace
-    showWorkspacePlaceholder('processing');
+    showWorkspaceProcessing();
 
     try {
       const res = await fetch('/clip-moments', {
@@ -1098,7 +1309,7 @@ if (btnClipMoments) {
         alert('Error: ' + (data.error || 'Terjadi kesalahan.'));
         btnClipMoments.disabled = false;
         btnClipMoments.classList.remove('loading');
-        showWorkspacePlaceholder('default');
+        if (cachedVideoInfo) switchWorkspaceState('info'); else resetEmptyState();
         return;
       }
 
@@ -1120,7 +1331,7 @@ if (btnClipMoments) {
       alert('Gagal menghubungi server: ' + err.message);
       btnClipMoments.disabled = false;
       btnClipMoments.classList.remove('loading');
-      showWorkspacePlaceholder('default');
+      if (cachedVideoInfo) switchWorkspaceState('info'); else resetEmptyState();
     }
   });
 }
@@ -1198,7 +1409,8 @@ function startBatchPolling() {
           batchProgressArea.style.display    = 'none';
           batchDownloadGallery.style.display = 'block';
           renderBatchGallery(batchTaskList);
-          showWorkspacePlaceholder('default');
+          // Show gallery in workspace
+          showWorkspaceGallery(batchTaskList);
         }, 800);
       }
 
@@ -1236,7 +1448,7 @@ function renderBatchGallery(tasks) {
 
     // Click on video in gallery -> play in workspace
     card.querySelector('.batch-clip-video').addEventListener('click', () => {
-      showWorkspaceVideo(fileUrl);
+      showWorkspacePlayer(fileUrl, t.output_file);
       highlightTimeline(t.start, t.end);
     });
 
@@ -1261,8 +1473,12 @@ function resetControversialUI() {
   if (btnClipMoments)        btnClipMoments.classList.remove('loading');
   if (btnClipMoments)        btnClipMoments.disabled = false;
 
-  hideWorkspaceVideo();
-  showWorkspacePlaceholder('default');
+  cachedVideoInfo = null;
+  if (workspaceVideoPlayer) {
+    workspaceVideoPlayer.pause();
+    workspaceVideoPlayer.removeAttribute('src');
+  }
+  resetEmptyState();
   clearTimelineHighlight();
 }
 
