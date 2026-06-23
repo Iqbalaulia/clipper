@@ -255,6 +255,8 @@ btnClip.addEventListener('click', async () => {
         sub_bold:          subBold        ? subBold.checked        : false,
         sub_italic:        subItalic      ? subItalic.checked      : false,
         sub_underline:     subUnderline   ? subUnderline.checked   : false,
+        subtitle_style:    $('subtitle-style') ? $('subtitle-style').value : 'standard',
+        bgm_type:          $('bgm-type')  ? $('bgm-type').value    : 'none',
         video_format:      videoFormat    ? videoFormat.value      : 'original',
         cookies:           $('manual-cookies') ? $('manual-cookies').value : '',
         // Preset style params
@@ -1288,6 +1290,8 @@ if (btnClipMoments) {
           subtitle_position: $('ctrl-sub-position')    ? $('ctrl-sub-position').value    : 'bottom',
           sub_fontsize:      $('ctrl-sub-fontsize')    ? $('ctrl-sub-fontsize').value    : '22',
           sub_case:          $('ctrl-sub-case')        ? $('ctrl-sub-case').value        : 'upper',
+          subtitle_style:    $('subtitle-style')       ? $('subtitle-style').value       : 'hormozi',
+          bgm_type:          $('bgm-type')             ? $('bgm-type').value             : 'none',
           sub_bold:          false,
           sub_italic:        false,
           sub_underline:     false,
@@ -1686,4 +1690,43 @@ async function checkCookiesStatus() {
   } catch (err) {}
 }
 
+window.addEventListener('DOMContentLoaded', checkCookiesStatus);
+
+// ── Cookies Upload Logic ──────────────────────────────────────────────────
+async function handleCookiesUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/upload-cookies', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.message);
+      checkCookiesStatus();
+    } else {
+      alert(data.error);
+    }
+  } catch (err) {
+    alert("Gagal mengunggah cookies: " + err.message);
+  }
+}
+const manualCookiesFile = $('manual-cookies-file');
+if (manualCookiesFile) manualCookiesFile.addEventListener('change', handleCookiesUpload);
+const ctrlCookiesFile = $('ctrl-cookies-file');
+if (ctrlCookiesFile) ctrlCookiesFile.addEventListener('change', handleCookiesUpload);
+
+async function checkCookiesStatus() {
+  try {
+    const res = await fetch('/cookies-status');
+    const data = await res.json();
+    document.querySelectorAll('.cookies-status-text').forEach(el => {
+      el.textContent = data.exists ? "✅ cookies.txt tersedia di server." : "❌ cookies.txt belum diupload.";
+    });
+    if (data.exists) {
+      if ($('manual-cookies-toggle')) $('manual-cookies-toggle').checked = true;
+      if ($('ctrl-cookies-toggle')) $('ctrl-cookies-toggle').checked = true;
+    }
+  } catch (err) {}
+}
 window.addEventListener('DOMContentLoaded', checkCookiesStatus);

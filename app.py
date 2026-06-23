@@ -168,6 +168,9 @@ def clip():
     sub_bold          = bool(data.get("sub_bold", False))
     sub_italic        = bool(data.get("sub_italic", False))
     sub_underline     = bool(data.get("sub_underline", False))
+    
+    subtitle_style    = (data.get("subtitle_style") or "standard").strip()
+    bgm_type          = (data.get("bgm_type") or "none").strip()
 
     # Subtitle color/style preset params
     sub_primary_color = (data.get("sub_primary_color") or "FFFFFF").strip().lstrip("#")
@@ -206,7 +209,9 @@ def clip():
         sub_bold=sub_bold,
         sub_italic=sub_italic,
         sub_underline=sub_underline,
+        subtitle_style=subtitle_style,
         video_format=video_format,
+        bgm_type=bgm_type,
         sub_primary_color=sub_primary_color,
         sub_outline_color=sub_outline_color,
         sub_back_color=sub_back_color,
@@ -870,6 +875,8 @@ def clip_moments():
     sub_bold          = bool(data.get("sub_bold", False))
     sub_italic        = bool(data.get("sub_italic", False))
     sub_underline     = bool(data.get("sub_underline", False))
+    subtitle_style    = (data.get("subtitle_style") or "standard").strip()
+    bgm_type          = (data.get("bgm_type") or "none").strip()
     sub_primary_color = (data.get("sub_primary_color") or "FFFFFF").strip().lstrip("#")
     sub_outline_color = (data.get("sub_outline_color") or "000000").strip().lstrip("#")
     sub_back_color    = (data.get("sub_back_color") or "000000").strip().lstrip("#")
@@ -902,6 +909,7 @@ def clip_moments():
             sub_bold=sub_bold,
             sub_italic=sub_italic,
             sub_underline=sub_underline,
+            subtitle_style=subtitle_style,
             sub_primary_color=sub_primary_color,
             sub_outline_color=sub_outline_color,
             sub_back_color=sub_back_color,
@@ -909,6 +917,7 @@ def clip_moments():
             sub_border_style=sub_border_style,
             sub_outline_width=sub_outline_width,
             sub_shadow=sub_shadow,
+            bgm_type=bgm_type,
             hook_title=title,
             hook_fontsize=str(data.get("hook_fontsize", "34")),
             hook_preset=data.get("hook_preset", "yellow-pop"),

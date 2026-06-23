@@ -436,6 +436,21 @@
                   <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
                 </div>
 
+                <!-- Background Music -->
+                <div class="field">
+                  <label for="bgm-type">Background Music (BGM)</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🎵</span>
+                    <select id="bgm-type">
+                      <option value="none">Tanpa BGM</option>
+                      <option value="lofi">Lo-Fi Chill</option>
+                      <option value="phonk">Sigma Phonk</option>
+                      <option value="cinematic">Cinematic Suspense</option>
+                    </select>
+                  </div>
+                  <span class="field-hint">Otomatis mencampur dengan suara asli (audio ducking).</span>
+                </div>
+
                 <!-- Hook Title Section -->
                 <div class="field">
                   <label for="hook-title">Judul Hook <span>(Opsional)</span></label>
@@ -565,6 +580,15 @@
                             <select id="sub-case">
                               <option value="normal">Normal</option>
                               <option value="upper">UPPERCASE</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div class="field" style="flex:1.5; min-width:140px;">
+                          <label for="subtitle-style">Gaya (Hormozi)</label>
+                          <div class="input-wrap select-wrap">
+                            <select id="subtitle-style">
+                              <option value="standard">Standard (Kalimat)</option>
+                              <option value="hormozi">Hormozi (Pop-in + Emoji)</option>
                             </select>
                           </div>
                         </div>

@@ -328,12 +328,27 @@ def _shift_srt(
     offset_sec: float,
     output_path: str,
     text_case: str = "normal",
+    subtitle_style: str = "standard",
 ):
     """
     Parse an SRT or VTT file, shift all timestamps back by `offset_sec`,
     drop entries outside the clip window, strip HTML tags, and write
     a clean SRT file.  Returns the number of subtitle entries written.
     """
+
+    EMOJI_MAP = {
+        "uang": "💸", "kaya": "💰", "duit": "💵", "cuan": "🤑",
+        "gila": "🤯", "bom": "💥", "meledak": "🔥",
+        "waktu": "⏳", "jam": "⏰", "cepat": "⚡",
+        "marah": "😡", "sedih": "😢", "nangis": "😭",
+        "senang": "😁", "cinta": "❤️", "sayang": "🥰",
+        "api": "🔥", "hot": "🌶️", "panas": "🥵",
+        "100": "💯", "oke": "👌", "bagus": "👍",
+        "dunia": "🌍", "rumah": "🏠", "mobil": "🚗",
+        "belajar": "📚", "buku": "📖", "pintar": "🧠",
+        "makan": "🍔", "minum": "🥤", "kopi": "☕",
+        "menang": "🏆", "juara": "🏅", "sukses": "🚀"
+    }
 
     def _ts_to_ms(ts: str) -> int:
         """HH:MM:SS,mmm or HH:MM:SS.mmm -> milliseconds"""
@@ -382,8 +397,6 @@ def _shift_srt(
             continue
 
         tc_raw = lines[tc_line_idx]
-        # The timestamp line may have VTT cue settings after the end time
-        # e.g. "00:01:30.000 --> 00:01:35.500 align:start position:0%"
         m = re.match(r"([\d:.]+(?:,[\d]+)?)\s*-->\s*([\d:.]+(?:,[\d]+)?)(.*)", tc_raw)
         if not m:
             continue
@@ -392,28 +405,66 @@ def _shift_srt(
             start_ms = _ts_to_ms(m.group(1)) - offset_ms
             end_ms   = _ts_to_ms(m.group(2)) - offset_ms
         except Exception:
-            continue  # malformed timestamp — skip block
+            continue
 
         if end_ms < 0:
             continue
 
-        new_tc = f"{_ms_to_srt_ts(max(start_ms, 0))} --> {_ms_to_srt_ts(end_ms)}"
         text_lines = lines[tc_line_idx + 1:]
-
-        # Clean up text lines
         cleaned = []
         for tl in text_lines:
             tl = _strip_sub_tags(tl)
-            if tl:  # skip blank lines inside block
+            if tl:
                 cleaned.append(tl)
         if not cleaned:
-            continue  # no visible text — skip block
+            continue
+            
+        full_text = " ".join(cleaned)
+        
+        # Apply case styling (Hormozi forces upper case)
+        if text_case == "upper" or subtitle_style == "hormozi":
+            full_text = full_text.upper()
 
-        if text_case == "upper":
-            cleaned = [tl.upper() for tl in cleaned]
-
-        result_blocks.append(f"{new_index}\n{new_tc}\n" + "\n".join(cleaned))
-        new_index += 1
+        if subtitle_style == "hormozi":
+            # Word-by-word chunking (2-3 words per screen)
+            words = full_text.split()
+            if not words:
+                continue
+                
+            chunk_size = 2  # words per screen
+            chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+            
+            # Distribute time evenly among chunks
+            duration_ms = end_ms - max(start_ms, 0)
+            chunk_duration = duration_ms // len(chunks)
+            
+            current_start = max(start_ms, 0)
+            
+            for chunk in chunks:
+                chunk_end = current_start + chunk_duration
+                
+                # Check for emojis
+                chunk_lower = chunk.lower()
+                matched_emoji = ""
+                for keyword, emoji in EMOJI_MAP.items():
+                    if re.search(r'\b' + re.escape(keyword) + r'\b', chunk_lower):
+                        matched_emoji = emoji
+                        break
+                
+                final_chunk_text = chunk
+                if matched_emoji:
+                    final_chunk_text += f" {matched_emoji}"
+                
+                new_tc = f"{_ms_to_srt_ts(current_start)} --> {_ms_to_srt_ts(chunk_end)}"
+                result_blocks.append(f"{new_index}\n{new_tc}\n{final_chunk_text}")
+                
+                new_index += 1
+                current_start = chunk_end
+        else:
+            # Standard subtitle rendering
+            new_tc = f"{_ms_to_srt_ts(max(start_ms, 0))} --> {_ms_to_srt_ts(end_ms)}"
+            result_blocks.append(f"{new_index}\n{new_tc}\n{full_text}")
+            new_index += 1
 
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write("\n\n".join(result_blocks) + ("\n" if result_blocks else ""))
@@ -455,7 +506,9 @@ def run_clip(
     sub_bold: bool = False,
     sub_italic: bool = False,
     sub_underline: bool = False,
+    subtitle_style: str = "standard",
     video_format: str = "original",
+    bgm_type: str = "none",
     sub_primary_color: str = "FFFFFF",
     sub_outline_color: str = "000000",
     sub_back_color: str = "000000",
@@ -710,7 +763,7 @@ def run_clip(
                 fast_seek_sec = max(0.0, start_sec - 30.0)
                 sub_shift_sec = fast_seek_sec if subtitle_type == "burn" else start_sec
                 
-                entry_count = _shift_srt(subtitle_file, sub_shift_sec, shifted_sub_path, sub_case)
+                entry_count = _shift_srt(subtitle_file, sub_shift_sec, shifted_sub_path, sub_case, subtitle_style)
                 if entry_count == 0 or not _validate_srt_file(shifted_sub_path):
                     _append_log(task_id, "[!] Subtitle kosong setelah diproses (clip mungkin di luar jangkauan subtitle) — lanjut tanpa subtitle.")
                     subtitle_enabled = False
@@ -900,14 +953,11 @@ def run_clip(
                 if fast_seek_sec > 0:
                     ffmpeg_cmd.extend(["-ss", f"{fast_seek_sec:.3f}"])
                 ffmpeg_cmd.extend(["-i", downloaded_file])
-                # Explicit stream mapping: always pick first video + first audio
-                ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
                 if acc_seek_sec > 0:
                     ffmpeg_cmd.extend(["-ss", f"{acc_seek_sec:.3f}"])
                 ffmpeg_cmd.extend(["-t", duration_ff])
             else:
                 ffmpeg_cmd = ["ffmpeg", "-y", "-i", temp_cut_path]
-                ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
 
             if has_sub_file and subtitle_type == "soft":
                 ffmpeg_cmd.extend(["-i", shifted_sub_path])
@@ -1073,8 +1123,26 @@ def run_clip(
                 vf_filters.append(f"subtitles='{safe_hook_sub}':force_style='{hook_style}'")
                 _append_log(task_id, f"[HOOK] Membakar judul hook ke video (Preset: {hook_preset}, Font: {ps['font']}, Size: {hook_fontsize})...")
 
-            if vf_filters:
-                ffmpeg_cmd.extend(["-vf", ",".join(vf_filters)])
+            bgm_file = os.path.join("bgm", f"{bgm_type}.mp3")
+            has_bgm = bgm_type != "none" and os.path.isfile(bgm_file)
+            
+            if has_bgm:
+                # BGM is the second input (or third if soft subs exist)
+                bgm_input_idx = 2 if (has_sub_file and subtitle_type == "soft") else 1
+                ffmpeg_cmd.extend(["-stream_loop", "-1", "-i", bgm_file])
+                _append_log(task_id, f"[AUDIO] Mencampur lagu latar ({bgm_type})...")
+                
+                video_filter_str = ",".join(vf_filters) if vf_filters else ""
+                if video_filter_str:
+                    filter_complex = f"[0:v:0]{video_filter_str}[v];[0:a:0]volume=1.0[a1];[{bgm_input_idx}:a:0]volume=0.1[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"
+                    ffmpeg_cmd.extend(["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]"])
+                else:
+                    filter_complex = f"[0:a:0]volume=1.0[a1];[{bgm_input_idx}:a:0]volume=0.1[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"
+                    ffmpeg_cmd.extend(["-filter_complex", filter_complex, "-map", "0:v:0", "-map", "[a]"])
+            else:
+                if vf_filters:
+                    ffmpeg_cmd.extend(["-vf", ",".join(vf_filters)])
+                ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
 
             ffmpeg_cmd.extend([
                 "-c:v", "libx264", "-preset", "fast", "-crf", "22",
@@ -1184,7 +1252,9 @@ def start_clip_thread(
     sub_bold: bool = False,
     sub_italic: bool = False,
     sub_underline: bool = False,
+    subtitle_style: str = "standard",
     video_format: str = "original",
+    bgm_type: str = "none",
     sub_primary_color: str = "FFFFFF",
     sub_outline_color: str = "000000",
     sub_back_color: str = "000000",
@@ -1205,7 +1275,7 @@ def start_clip_thread(
         args=(task_id, url, start, end, output_dir,
               subtitle_enabled, subtitle_lang, subtitle_type,
               subtitle_auto, subtitle_position, sub_fontsize, sub_case,
-              sub_bold, sub_italic, sub_underline, video_format,
+              sub_bold, sub_italic, sub_underline, subtitle_style, video_format, bgm_type,
               sub_primary_color, sub_outline_color, sub_back_color,
               sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
               hook_title, hook_fontsize, hook_preset, hook_position, cookies),
