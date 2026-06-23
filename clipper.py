@@ -523,6 +523,10 @@ def _detect_broll_timestamps(srt_path: str):
     return broll_events
 
 def _rgb_to_ass(rgb_hex: str, alpha_hex: str = "00") -> str:
+    """Convert RGB hex (RRGGBB) to ASS color format (&HAABBGGRR&)."""
+    rgb_hex = rgb_hex.lstrip("#").ljust(6, "0")
+    r, g, b = rgb_hex[0:2], rgb_hex[2:4], rgb_hex[4:6]
+    return f"&H{alpha_hex}{b}{g}{r}&"
 
 
 def run_clip(
