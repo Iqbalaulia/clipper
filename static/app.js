@@ -257,6 +257,7 @@ btnClip.addEventListener('click', async () => {
         sub_underline:     subUnderline   ? subUnderline.checked   : false,
         subtitle_style:    $('subtitle-style') ? $('subtitle-style').value : 'standard',
         bgm_type:          $('bgm-type')  ? $('bgm-type').value    : 'none',
+        auto_broll:        $('broll-toggle') ? $('broll-toggle').checked : false,
         video_format:      videoFormat    ? videoFormat.value      : 'original',
         cookies:           $('manual-cookies') ? $('manual-cookies').value : '',
         // Preset style params
@@ -1292,6 +1293,7 @@ if (btnClipMoments) {
           sub_case:          $('ctrl-sub-case')        ? $('ctrl-sub-case').value        : 'upper',
           subtitle_style:    $('subtitle-style')       ? $('subtitle-style').value       : 'hormozi',
           bgm_type:          $('bgm-type')             ? $('bgm-type').value             : 'none',
+          auto_broll:        $('ctrl-broll-toggle')    ? $('ctrl-broll-toggle').checked  : false,
           sub_bold:          false,
           sub_italic:        false,
           sub_underline:     false,

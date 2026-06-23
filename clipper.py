@@ -484,10 +484,45 @@ def _validate_srt_file(path: str) -> bool:
         return False
 
 
+def _detect_broll_timestamps(srt_path: str):
+    if not os.path.isfile(srt_path):
+        return []
+    
+    broll_map = {
+        "money.mp4": ["uang", "duit", "cuan", "kaya", "miliar"],
+        "time.mp4": ["waktu", "jam", "hari", "tahun", "lama"],
+        "fire.mp4": ["panas", "api", "marah", "gila", "hancur", "terbakar"]
+    }
+    
+    with open(srt_path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    
+    blocks = re.split(r'\n\s*\n', content.strip())
+    time_pattern = re.compile(r'(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}')
+    
+    broll_events = []
+    
+    for block in blocks:
+        if len(broll_events) > 0: break # Only 1 b-roll for now to keep ffmpeg simple
+        lines = [l.strip() for l in block.splitlines() if l.strip()]
+        if len(lines) < 3: continue
+        
+        m = time_pattern.search(lines[1])
+        if not m: continue
+        
+        text = " ".join(lines[2:]).lower()
+        for broll_file, keywords in broll_map.items():
+            if any(kw in text for kw in keywords):
+                if os.path.isfile(os.path.join("broll", broll_file)):
+                    h, m_min, s, ms = map(int, m.groups())
+                    start_sec = h * 3600 + m_min * 60 + s + ms / 1000.0
+                    end_sec = start_sec + 2.5
+                    broll_events.append({"start": start_sec, "end": end_sec, "file": os.path.join("broll", broll_file)})
+                    break
+                    
+    return broll_events
+
 def _rgb_to_ass(rgb_hex: str, alpha_hex: str = "00") -> str:
-    """Convert RRGGBB hex string to ASS colour &HAABBGGRR (alpha 00=fully opaque, FF=fully transparent)."""
-    h = rgb_hex.lstrip("#").upper().zfill(6)
-    return f"&H{alpha_hex.upper()}{h[4:6]}{h[2:4]}{h[0:2]}"
 
 
 def run_clip(
@@ -521,6 +556,7 @@ def run_clip(
     hook_preset: str = "yellow-pop",
     hook_position: str = "top",
     cookies: str = "",
+    auto_broll: bool = False,
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
@@ -854,6 +890,12 @@ def run_clip(
                     "[TRACK] ⚠️ Gagal memotong segmen untuk analisis — menggunakan center crop.",
                 )
 
+        broll_events = []
+        if auto_broll and has_sub_file and subtitle_type == "burn":
+            broll_events = _detect_broll_timestamps(shifted_sub_path)
+            if broll_events:
+                _append_log(task_id, f"[B-ROLL] Terdeteksi B-Roll! Overlay {broll_events[0]['file']} pada detik {broll_events[0]['start']:.1f}")
+
         _update_task(task_id, status="processing", progress=76)
 
         start_sec = _parse_seconds(start)
@@ -1126,22 +1168,58 @@ def run_clip(
             bgm_file = os.path.join("bgm", f"{bgm_type}.mp3")
             has_bgm = bgm_type != "none" and os.path.isfile(bgm_file)
             
+            # Base video filter logic
+            video_filter_str = ",".join(vf_filters) if vf_filters else ""
+            filter_complex = ""
+            map_v = "[v]" if video_filter_str else "0:v:0"
+            
+            # Input index tracker
+            next_input_idx = 1
+            if has_sub_file and subtitle_type == "soft":
+                next_input_idx += 1
+            
+            # ── B-Roll Overlay Logic ──
+            if broll_events:
+                broll = broll_events[0]
+                broll_input_idx = next_input_idx
+                ffmpeg_cmd.extend(["-i", broll["file"]])
+                next_input_idx += 1
+                
+                # Setup complex filter for overlay
+                # broll scaled and overlaid over main video [v] or 0:v:0
+                broll_v_in = f"{map_v}"
+                filter_complex += f"[{broll_input_idx}:v:0]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[b_scaled];"
+                if video_filter_str:
+                    filter_complex = f"[0:v:0]{video_filter_str}[main_v];" + filter_complex
+                    broll_v_in = "[main_v]"
+                
+                filter_complex += f"{broll_v_in}[b_scaled]overlay=0:0:enable='between(t,{broll['start']},{broll['end']})'[v];"
+                map_v = "[v]"
+            else:
+                if video_filter_str:
+                    filter_complex += f"[0:v:0]{video_filter_str}[v];"
+
+            # ── BGM Audio Mixing Logic ──
             if has_bgm:
-                # BGM is the second input (or third if soft subs exist)
-                bgm_input_idx = 2 if (has_sub_file and subtitle_type == "soft") else 1
+                bgm_input_idx = next_input_idx
                 ffmpeg_cmd.extend(["-stream_loop", "-1", "-i", bgm_file])
                 _append_log(task_id, f"[AUDIO] Mencampur lagu latar ({bgm_type})...")
                 
-                video_filter_str = ",".join(vf_filters) if vf_filters else ""
-                if video_filter_str:
-                    filter_complex = f"[0:v:0]{video_filter_str}[v];[0:a:0]volume=1.0[a1];[{bgm_input_idx}:a:0]volume=0.1[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"
-                    ffmpeg_cmd.extend(["-filter_complex", filter_complex, "-map", "[v]", "-map", "[a]"])
-                else:
-                    filter_complex = f"[0:a:0]volume=1.0[a1];[{bgm_input_idx}:a:0]volume=0.1[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"
-                    ffmpeg_cmd.extend(["-filter_complex", filter_complex, "-map", "0:v:0", "-map", "[a]"])
+                filter_complex += f"[0:a:0]volume=1.0[a1];[{bgm_input_idx}:a:0]volume=0.1[a2];[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"
+                map_a = "[a]"
             else:
-                if vf_filters:
-                    ffmpeg_cmd.extend(["-vf", ",".join(vf_filters)])
+                map_a = "0:a:0"
+                # If filter_complex ends with a semicolon and no audio mixing, strip it to keep it valid
+                if filter_complex.endswith(";"):
+                    pass # it's fine, we will just use [v] and 0:a:0
+            
+            if filter_complex:
+                filter_complex = filter_complex.strip(";")
+                ffmpeg_cmd.extend(["-filter_complex", filter_complex])
+                if map_v != "0:v:0": ffmpeg_cmd.extend(["-map", map_v])
+                if map_a != "0:a:0": ffmpeg_cmd.extend(["-map", map_a])
+                if map_v == "0:v:0" and map_a == "0:a:0": ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
+            else:
                 ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
 
             ffmpeg_cmd.extend([
@@ -1267,6 +1345,7 @@ def start_clip_thread(
     hook_preset: str = "yellow-pop",
     hook_position: str = "top",
     cookies: str = "",
+    auto_broll: bool = False,
 ):
     """
     Menjalankan proses pemotongan di thread terpisah."""
@@ -1278,7 +1357,7 @@ def start_clip_thread(
               sub_bold, sub_italic, sub_underline, subtitle_style, video_format, bgm_type,
               sub_primary_color, sub_outline_color, sub_back_color,
               sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
-              hook_title, hook_fontsize, hook_preset, hook_position, cookies),
+              hook_title, hook_fontsize, hook_preset, hook_position, cookies, auto_broll),
         daemon=True,
     )
     t.start()

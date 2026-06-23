@@ -189,6 +189,8 @@ def clip():
     hook_preset       = (data.get("hook_preset") or "yellow-pop").strip()
     hook_position     = (data.get("hook_position") or "top").strip()
     
+    auto_broll        = bool(data.get("auto_broll", False))
+    
     cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
 
     task_id = clipper.create_task()
@@ -224,6 +226,7 @@ def clip():
         hook_preset=hook_preset,
         hook_position=hook_position,
         cookies=cookies_file,
+        auto_broll=auto_broll,
     )
 
     return jsonify({"task_id": task_id})
@@ -884,6 +887,7 @@ def clip_moments():
     sub_border_style  = str(data.get("sub_border_style") or "1").strip()
     sub_outline_width = str(data.get("sub_outline_width") or "2").strip()
     sub_shadow        = str(data.get("sub_shadow") or "1").strip()
+    auto_broll        = bool(data.get("auto_broll", False))
 
     task_list = []
     for moment in moments:
@@ -923,6 +927,7 @@ def clip_moments():
             hook_preset=data.get("hook_preset", "yellow-pop"),
             hook_position=data.get("hook_position", "top"),
             cookies=cookies_file,
+            auto_broll=auto_broll,
         )
         task_list.append({
             "task_id": task_id,
