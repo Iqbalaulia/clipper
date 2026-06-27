@@ -1380,12 +1380,14 @@ function startBatchPolling() {
 
       let allDone = true;
       let anyError = false;
+      let totalPct = 0;
 
       batchTaskList.forEach(t => {
         const st = tasks[t.task_id];
         if (!st) return;
 
         const pct      = st.progress || 0;
+        totalPct += pct;
         const status   = st.status;
         const itemEl   = $(`batch-task-${t.task_id}`);
         const fillEl   = $(`fill-${t.task_id}`);
@@ -1405,6 +1407,10 @@ function startBatchPolling() {
         if (st.file) t.output_file = st.file;
         if (st.error) t.error_msg  = st.error;
       });
+
+      // Update central workspace progress ring
+      const avgPct = batchTaskList.length > 0 ? Math.round(totalPct / batchTaskList.length) : 0;
+      updateWorkspaceProgress(avgPct, '⚙️ Memproses Batch...', 'processing');
 
       // All finished
       if (allDone) {

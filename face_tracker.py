@@ -219,9 +219,13 @@ def generate_crop_data(
     crop_h = video_height
     crop_w = int(crop_h * target_ratio)
 
+    # Ensure dimensions are even (required by H.264 / social media platforms)
+    crop_w = crop_w & ~1  # Round down to nearest even number
+    crop_h = crop_h & ~1
+
     # Ensure crop_w doesn't exceed video_width
     if crop_w > video_width:
-        crop_w = video_width
+        crop_w = video_width & ~1
 
     max_crop_x = video_width - crop_w
     center_crop_x = max_crop_x / 2.0  # default: center
@@ -395,10 +399,11 @@ def build_crop_filter_string(
         "crop=w:h:x_expr:0"
     """
     if not crop_data:
-        # Fallback: center crop
-        crop_w = int(video_height * 9.0 / 16.0)
+        # Fallback: center crop (ensure even dimensions for H.264)
+        crop_w = int(video_height * 9.0 / 16.0) & ~1
+        crop_h = video_height & ~1
         crop_x = (video_width - crop_w) // 2
-        return f"crop={crop_w}:{video_height}:{crop_x}:0"
+        return f"crop={crop_w}:{crop_h}:{crop_x}:0"
 
     crop_w = crop_data[0]["crop_w"]
     crop_h = crop_data[0]["crop_h"]

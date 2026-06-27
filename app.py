@@ -653,8 +653,6 @@ def detect_moments():
         # ── Step 1: Ambil metadata video ────────────────────────────────
         cmd = [
             sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist",
-            "--js-runtimes", "node:node.exe",
-            "--remote-components", "ejs:github",
             "--no-check-certificates",
         ]
         if use_cookies:
@@ -693,8 +691,6 @@ def detect_moments():
             "--write-auto-sub", "--write-sub",
             "--sub-lang", subtitle_lang, "--convert-subs", "srt",
             "--skip-download",
-            "--js-runtimes", "node:node.exe",
-            "--remote-components", "ejs:github",
             "--no-check-certificates",
             "--output", os.path.join(OUTPUT_DIR, "_scan_%(id)s.%(ext)s"),
             "--no-playlist",

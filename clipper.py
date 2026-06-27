@@ -602,8 +602,6 @@ def run_clip(
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
                         "--skip-download",
-                        "--js-runtimes", "node:node.exe",
-                        "--remote-components", "ejs:github",
                         "--no-check-certificates",
                         "--output", sub_dl_path,
                         "--no-playlist",
@@ -641,8 +639,6 @@ def run_clip(
                     "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                     "--merge-output-format", "mp4",
                     "--output", cache_video_path,
-                    "--js-runtimes", "node:node.exe",
-                    "--remote-components", "ejs:github",
                     "--no-check-certificates",
                     "--no-playlist",
                     "--progress",
@@ -707,8 +703,6 @@ def run_clip(
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
                         "--skip-download",
-                        "--js-runtimes", "node:node.exe",
-                        "--remote-components", "ejs:github",
                         "--no-check-certificates",
                         "--output", sub_dl_path,
                         "--no-playlist",
@@ -1012,9 +1006,13 @@ def run_clip(
             vf_filters = []
             if video_format == "vertical-crop":
                 vf_filters.append("crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'")
+                vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                vf_filters.append("setsar=1")
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Crop Center)")
             elif video_format == "vertical-pad":
                 vf_filters.append("pad='max(iw,ih*9/16)':'max(ih,iw*16/9)':(ow-iw)/2:(oh-ih)/2:black")
+                vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                vf_filters.append("setsar=1")
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Pad Black Bars)")
             elif video_format == "vertical-blur":
                 vf_filters.append(
@@ -1027,10 +1025,16 @@ def run_clip(
             elif video_format == "vertical-speaker":
                 if speaker_crop_filter:
                     vf_filters.append(speaker_crop_filter)
+                    # Scale to standard 1080x1920 to ensure social media compatibility
+                    # (Facebook, TikTok, IG require standard resolutions)
+                    vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                    vf_filters.append("setsar=1")
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (🎯 Speaker Tracking)")
                 else:
                     # Fallback to center crop when tracking failed
                     vf_filters.append("crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'")
+                    vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                    vf_filters.append("setsar=1")
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Center Crop — fallback)")
 
             if has_sub_file and subtitle_type == "burn":
