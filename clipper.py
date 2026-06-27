@@ -808,9 +808,9 @@ def run_clip(
                 _append_log(task_id, "[!] Subtitle tidak ditemukan — lanjut tanpa subtitle.")
                 subtitle_enabled = False
 
-        # ── Step 2b: Speaker Tracking (if vertical-speaker) ────────────────
+        # ── Step 2b: Speaker Tracking (if vertical-speaker or vertical-speaker-blur) ─
         speaker_crop_filter = None
-        if video_format == "vertical-speaker":
+        if video_format in ("vertical-speaker", "vertical-speaker-blur"):
             _update_task(task_id, status="tracking", progress=55)
             _append_log(task_id, "[TRACK] 🎯 Memulai analisis wajah untuk Speaker Tracking...")
 
@@ -1036,6 +1036,30 @@ def run_clip(
                     vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
                     vf_filters.append("setsar=1")
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Center Crop — fallback)")
+            elif video_format == "vertical-speaker-blur":
+                # Speaker Tracking + Blur Background
+                # The speaker_crop_filter contains the dynamic crop expression from face tracking.
+                # We need to: 1) create blurred BG from center-crop, 2) overlay face-tracked foreground.
+                if speaker_crop_filter:
+                    # speaker_crop_filter is like: crop=W:H:x_expr:0
+                    # We use it as the foreground, and a blurred center crop as background.
+                    # This is a complex filter, so we build a filter_complex-compatible string.
+                    vf_filters.append(
+                        f"split=2[bg][fg];"
+                        f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',boxblur=20:5,scale=1080:1920:force_original_aspect_ratio=disable,setsar=1[bg_blur];"
+                        f"[fg]{speaker_crop_filter},scale=1080:-2[fg_tracked];"
+                        f"[bg_blur][fg_tracked]overlay=(W-w)/2:(H-h)/2"
+                    )
+                    _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (🎯 Speaker Tracking + Blur Background)")
+                else:
+                    # Fallback to standard blur background (center crop) when tracking failed
+                    vf_filters.append(
+                        "split=2[bg][fg];"
+                        "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',boxblur=20:5[bg_blur];"
+                        "[fg]scale='min(iw,ih*9/16)*1.44':-1[fg_scaled];"
+                        "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
+                    )
+                    _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background — fallback)")
 
             if has_sub_file and subtitle_type == "burn":
                 # Build safe path for FFmpeg subtitles filter on Windows
@@ -1224,11 +1248,8 @@ def run_clip(
             if filter_complex:
                 filter_complex = filter_complex.strip(";")
                 ffmpeg_cmd.extend(["-filter_complex", filter_complex])
-                if map_v != "0:v:0": ffmpeg_cmd.extend(["-map", map_v])
-                if map_a != "0:a:0": ffmpeg_cmd.extend(["-map", map_a])
-                if map_v == "0:v:0" and map_a == "0:a:0": ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
-            else:
-                ffmpeg_cmd.extend(["-map", "0:v:0", "-map", "0:a:0"])
+            # Always map both video and audio streams
+            ffmpeg_cmd.extend(["-map", map_v, "-map", map_a])
 
             ffmpeg_cmd.extend([
                 "-c:v", "libx264", "-preset", "fast", "-crf", "22",
