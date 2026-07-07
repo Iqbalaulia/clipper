@@ -23,6 +23,10 @@ BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
 COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
+# Pastikan runtime Node.js bawaan (node.exe di folder proyek) bisa ditemukan
+# oleh subprocess yt-dlp meskipun aplikasi dijalankan dari cwd lain.
+os.environ["PATH"] = BASE_DIR + os.pathsep + os.environ.get("PATH", "")
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max request
 
@@ -66,7 +70,7 @@ def check_deps():
     # yt-dlp (installed as Python module)
     try:
         r = subprocess.run(
-            [sys.executable, "-m", "yt_dlp", "--version"],
+            [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--version"],
             capture_output=True, text=True, timeout=10,
         )
         results["yt_dlp"] = r.stdout.strip() if r.returncode == 0 else None
@@ -98,7 +102,7 @@ def video_info():
 
     try:
         cmd = [
-            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist",
+            sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist",
             "--no-check-certificates",
         ]
         if os.path.isfile(COOKIES_FILE):
@@ -407,7 +411,7 @@ def generate_hook():
     try:
         # 1. Ekstrak metadata video dengan yt-dlp
         cmd = [
-            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url
+            sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist", url
         ]
         if os.path.isfile(COOKIES_FILE):
             cmd += ["--cookies", COOKIES_FILE]
@@ -500,7 +504,7 @@ def generate_copy():
             time_context = f"\nFokus penuh pada konteks di atas. Buatkan copywriting yang SANGAT SPESIFIK untuk klip pendek ini!"
         else:
             # 1. Ekstrak metadata video dengan yt-dlp
-            cmd = [sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist", url]
+            cmd = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist", url]
             use_cookies = bool(data.get("cookies", False))
             if use_cookies and os.path.isfile(COOKIES_FILE):
                 cmd += ["--cookies", COOKIES_FILE]
@@ -652,7 +656,7 @@ def detect_moments():
     try:
         # ── Step 1: Ambil metadata video ────────────────────────────────
         cmd = [
-            sys.executable, "-m", "yt_dlp", "--dump-json", "--no-playlist",
+            sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist",
             "--no-check-certificates",
         ]
         if use_cookies:
@@ -687,7 +691,7 @@ def detect_moments():
         transcript_text = ""
         raw_srt = ""
         sub_cmd = [
-            sys.executable, "-m", "yt_dlp",
+            sys.executable, "-m", "yt_dlp", "--js-runtimes", "node",
             "--write-auto-sub", "--write-sub",
             "--sub-lang", subtitle_lang, "--convert-subs", "srt",
             "--skip-download",

@@ -1,6 +1,11 @@
 import subprocess
 import os
 import uuid
+
+# Pastikan runtime Node.js bawaan (node.exe di folder proyek) bisa ditemukan
+# oleh subprocess yt-dlp meskipun aplikasi dijalankan dari cwd lain.
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ["PATH"] = _PROJECT_DIR + os.pathsep + os.environ.get("PATH", "")
 import threading
 import re
 import sys
@@ -597,7 +602,7 @@ def run_clip(
                     first_lang = subtitle_lang.split(",")[0].strip()
                     sub_dl_path = os.path.join(output_dir, f"_sub_dl_{task_id}")
                     sub_cmd = [
-                        sys.executable, "-m", "yt_dlp",
+                        sys.executable, "-m", "yt_dlp", "--js-runtimes", "node",
                         "--write-auto-sub", "--write-sub",
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
@@ -634,63 +639,108 @@ def run_clip(
             else:
                 _append_log(task_id, "[>>] Memulai unduhan video...")
 
-                yt_dlp_cmd = [
-                    sys.executable, "-m", "yt_dlp",
-                    "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                    "--merge-output-format", "mp4",
-                    "--output", cache_video_path,
-                    "--no-check-certificates",
-                    "--no-playlist",
-                    "--progress",
-                    "--newline",
+                download_attempts = [
+                    (
+                        "format utama (kualitas tinggi)",
+                        [],
+                        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                    ),
+                    (
+                        "fallback web (kombinasi 360p)",
+                        ["--extractor-args", "youtube:player_client=web"],
+                        "best[ext=mp4]/best",
+                    ),
                 ]
 
-                if cookies:
-                    yt_dlp_cmd += ["--cookies", cookies]
+                output_lines = []
+                for attempt_idx, (label, extra_args, fmt) in enumerate(download_attempts):
+                    # Bersihkan file .part yang mungkin expired/corrupt sebelum retry
+                    if attempt_idx > 0:
+                        for f in os.listdir(output_dir):
+                            if f.startswith(f"_cache_{video_id}") and f.endswith(".part"):
+                                try:
+                                    os.remove(os.path.join(output_dir, f))
+                                except OSError:
+                                    pass
 
-                yt_dlp_cmd.append(url)
-                _append_log(task_id, f"[>>] Perintah yt-dlp video: {' '.join(yt_dlp_cmd)}")
-
-                proc = subprocess.Popen(
-                    yt_dlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, encoding="utf-8", errors="replace"
-                )
-
-                while True:
-                    line = proc.stdout.readline()
-                    if not line and proc.poll() is not None:
-                        break
-                    if line:
-                        line = line.strip()
-                        # Filter output for progress
-                        if "[download]" in line and "%" in line:
-                            m = re.search(r"\[download\]\s+([\d.]+)%", line)
-                            if m:
-                                _update_task(task_id, progress=int(5 + float(m.group(1)) * 0.55))
-                        elif "[youtube]" in line or "ERROR:" in line or "[Merger]" in line:
-                            _append_log(task_id, line)
-
-                proc.wait()
-
-                if proc.returncode != 0:
-                    _append_log(task_id, "⚠️ Peringatan: yt-dlp melaporkan error (mungkin sebagian unduhan gagal), memverifikasi file...")
-
-                if os.path.isfile(cache_video_path):
-                    downloaded_file = cache_video_path
-                else:
-                    candidates = [
-                        os.path.join(output_dir, f)
-                        for f in os.listdir(output_dir)
-                        if f.startswith(f"_cache_{video_id}")
-                        and not f.endswith(".part")
-                        and not f.endswith(".srt")
-                        and not f.endswith(".vtt")
+                    yt_dlp_cmd = [
+                        sys.executable, "-m", "yt_dlp", "--js-runtimes", "node",
+                        *extra_args,
+                        "--format", fmt,
+                        "--merge-output-format", "mp4",
+                        "--output", cache_video_path,
+                        "--no-check-certificates",
+                        "--no-playlist",
+                        "--progress",
+                        "--newline",
+                        "--retries", "10",
+                        "--fragment-retries", "10",
                     ]
-                    if candidates:
-                        downloaded_file = candidates[0]
+
+                    if cookies:
+                        yt_dlp_cmd += ["--cookies", cookies]
+
+                    yt_dlp_cmd.append(url)
+                    _append_log(task_id, f"[>>] Percobaan {attempt_idx + 1}/{len(download_attempts)} ({label}): {' '.join(yt_dlp_cmd)}")
+
+                    proc = subprocess.Popen(
+                        yt_dlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, encoding="utf-8", errors="replace"
+                    )
+
+                    output_lines = []
+                    while True:
+                        line = proc.stdout.readline()
+                        if not line and proc.poll() is not None:
+                            break
+                        if line:
+                            line = line.strip()
+                            output_lines.append(line)
+                            # Filter output for progress
+                            if "[download]" in line and "%" in line:
+                                m = re.search(r"\[download\]\s+([\d.]+)%", line)
+                                if m:
+                                    _update_task(task_id, progress=int(5 + float(m.group(1)) * 0.55))
+                            elif "[youtube]" in line or "ERROR:" in line or "[Merger]" in line or "WARNING:" in line:
+                                _append_log(task_id, line)
+
+                    proc.wait()
+
+                    if proc.returncode != 0:
+                        _append_log(task_id, f"⚠️ Percobaan {attempt_idx + 1} gagal (exit {proc.returncode}), memverifikasi file...")
+
+                    if os.path.isfile(cache_video_path):
+                        downloaded_file = cache_video_path
+                    else:
+                        candidates = [
+                            os.path.join(output_dir, f)
+                            for f in os.listdir(output_dir)
+                            if f.startswith(f"_cache_{video_id}")
+                            and not f.endswith(".part")
+                            and not f.endswith(".srt")
+                            and not f.endswith(".vtt")
+                        ]
+                        if candidates:
+                            downloaded_file = candidates[0]
+
+                    if downloaded_file:
+                        _append_log(task_id, f"✅ Unduhan berhasil dengan {label}.")
+                        break
+
+                    # Jika bukan karena 403, tidak perlu retry fallback
+                    attempt_log = "\n".join(output_lines[-30:])
+                    if "HTTP Error 403" not in attempt_log and "unable to download video data" not in attempt_log:
+                        break
+                    _append_log(task_id, "⚠️ Format diblokir (403), mencoba fallback...")
 
                 if not downloaded_file:
-                    raise RuntimeError(f"Gagal mengunduh video (Exit Code: {proc.returncode}). YouTube mungkin memblokir akses atau URL tidak valid.")
+                    last_log = "\n".join(output_lines[-30:])
+                    _append_log(task_id, f"[yt-dlp output]\n{last_log}")
+                    raise RuntimeError(
+                        f"Gagal mengunduh video (Exit Code: {proc.returncode}).\n"
+                        f"YouTube mungkin memblokir akses, URL tidak valid, atau ffmpeg/merger gagal.\n"
+                        f"Log yt-dlp:\n{last_log}"
+                    )
 
                 # Download subtitle to task-specific path (not shared cache)
                 if subtitle_enabled:
@@ -698,7 +748,7 @@ def run_clip(
                     first_lang = subtitle_lang.split(",")[0].strip()
                     sub_dl_path = os.path.join(output_dir, f"_sub_dl_{task_id}")
                     sub_cmd = [
-                        sys.executable, "-m", "yt_dlp",
+                        sys.executable, "-m", "yt_dlp", "--js-runtimes", "node",
                         "--write-auto-sub", "--write-sub",
                         "--sub-lang", subtitle_lang,
                         "--convert-subs", "srt",
@@ -1015,10 +1065,12 @@ def run_clip(
                 vf_filters.append("setsar=1")
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Pad Black Bars)")
             elif video_format == "vertical-blur":
+                # Background: center 9:16 crop blurred and scaled to 1080x1920.
+                # Foreground: same center crop scaled slightly smaller so blur edges show.
                 vf_filters.append(
                     "split=2[bg][fg];"
-                    "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',boxblur=20:5[bg_blur];"
-                    "[fg]scale='min(iw,ih*9/16)*1.44':-1[fg_scaled];"
+                    "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
+                    "[fg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=960:-2[fg_scaled];"
                     "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
                 )
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background)")
@@ -1046,8 +1098,8 @@ def run_clip(
                     # This is a complex filter, so we build a filter_complex-compatible string.
                     vf_filters.append(
                         f"split=2[bg][fg];"
-                        f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',boxblur=20:5,scale=1080:1920:force_original_aspect_ratio=disable,setsar=1[bg_blur];"
-                        f"[fg]{speaker_crop_filter},scale=1080:-2[fg_tracked];"
+                        f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
+                        f"[fg]{speaker_crop_filter},scale=960:-2[fg_tracked];"
                         f"[bg_blur][fg_tracked]overlay=(W-w)/2:(H-h)/2"
                     )
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (🎯 Speaker Tracking + Blur Background)")
@@ -1055,8 +1107,8 @@ def run_clip(
                     # Fallback to standard blur background (center crop) when tracking failed
                     vf_filters.append(
                         "split=2[bg][fg];"
-                        "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',boxblur=20:5[bg_blur];"
-                        "[fg]scale='min(iw,ih*9/16)*1.44':-1[fg_scaled];"
+                        "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
+                        "[fg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=960:-2[fg_scaled];"
                         "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
                     )
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background — fallback)")
