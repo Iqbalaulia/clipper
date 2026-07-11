@@ -87,7 +87,7 @@
         <div class="ws-empty-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="23 7 16 12 23 17 23 7"/>
-            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            <rect x="1" y="5" width="15" height="14"/>
           </svg>
         </div>
         <p class="ws-empty-title">Mulai dengan Memasukkan URL</p>
@@ -297,7 +297,7 @@
               </div>
 
               <!-- Subtitle Style Options (shown when subtitle enabled) -->
-              <div id="ctrl-subtitle-options" style="display:none; margin:4px 0 12px; padding:12px; background:rgba(0,0,0,0.25); border-radius:var(--radius-md); border:1px solid var(--border-subtle);">
+              <div id="ctrl-subtitle-options" style="display:none; margin:4px 0 12px; padding:12px; background:var(--rb-sunken); border:3px solid var(--rb-black);">
                 <p class="position-label" style="margin-bottom:10px; font-size:0.78rem;">🎨 Kustomisasi Subtitle</p>
                 <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; align-items:flex-end;">
                   <div style="flex:0 0 90px;">
@@ -476,7 +476,7 @@
                       <span class="input-icon">🔥</span>
                       <input type="text" id="hook-title" placeholder="Contoh: Tonton Sampai Habis!" />
                     </div>
-                    <button type="button" id="btn-generate-hook" class="btn-secondary" style="padding:0 12px; border-radius:8px; display:flex; align-items:center; gap:4px; font-weight:500; font-size:.82rem;">
+                    <button type="button" id="btn-generate-hook" class="btn-secondary" style="padding:0 12px; display:flex; align-items:center; gap:4px; font-weight:500; font-size:.82rem;">
                       <span class="btn-icon">✨</span> Auto
                     </button>
                   </div>
@@ -580,7 +580,7 @@
                     </div>
 
                     <!-- Style selector (burn-in only) -->
-                    <div class="style-row" id="style-row" style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border-subtle); display:none;">
+                    <div class="style-row" id="style-row" style="margin-top:10px; padding-top:10px; border-top:3px solid var(--rb-black); display:none;">
                       <p class="position-label">🎨 Preset Style Subtitle</p>
                       <div class="preset-scroller">
                         <div class="preset-cards" id="preset-cards"></div>
@@ -648,7 +648,7 @@
           <div class="card" id="cookies-card">
             <div class="controversial-header">
               <div class="controversial-title-row">
-                <div class="controversial-icon-wrap cookies-card-icon" style="background:rgba(255,165,0,0.2); color:#ffa500;">🍪</div>
+                <div class="controversial-icon-wrap cookies-card-icon">🍪</div>
                 <div>
                   <p class="controversial-label">Bypass Blokir YouTube</p>
                   <p class="controversial-sublabel">Upload cookies.txt jika YouTube memblokir akses</p>
@@ -787,7 +787,7 @@
         <div class="download-card" id="download-card">
           <span class="success-icon">🎉</span>
           <h3>Video Berhasil Dipotong!</h3>
-          <p id="download-name" style="font-family:'JetBrains Mono',monospace; font-size:.78rem; color:var(--accent-success); margin-bottom:12px; text-align:center;"></p>
+          <p id="download-name" style="font-family:'Space Mono',monospace; font-size:.78rem; color:var(--accent-success); margin-bottom:12px; text-align:center;"></p>
           <div class="video-preview-wrap">
             <video id="preview-video" controls preload="metadata"></video>
           </div>
@@ -804,7 +804,7 @@
         <div class="card ai-card">
           <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
             <span>✨ AI Social Media Copywriter</span>
-            <button id="btn-copy-ai" class="btn-new" style="padding:3px 8px; font-size:.68rem; background:rgba(255,230,0,0.08); border-color:var(--accent-primary); color:var(--accent-primary); display:none;">📋 Copy</button>
+            <button id="btn-copy-ai" class="btn-new" style="padding:3px 8px; font-size:.68rem; display:none;">📋 Copy</button>
           </div>
           <p class="field-hint" style="margin-bottom:12px;">Buat judul viral, caption, hashtag, dan CTA otomatis.</p>
 
@@ -816,13 +816,13 @@
             </div>
           </div>
 
-          <button type="button" class="btn-clip" id="btn-generate-ai" style="background:var(--grad-primary); margin-bottom:12px; width:100%;">
-            <div class="spinner" id="ai-spinner" style="border-top-color:#16161a; display:none;"></div>
+          <button type="button" class="btn-clip" id="btn-generate-ai" style="margin-bottom:12px; width:100%;">
+            <div class="spinner" id="ai-spinner" style="display:none;"></div>
             <span class="btn-label" id="ai-btn-label">✨ Generate Copy</span>
           </button>
 
           <div id="ai-result-wrap" style="display:none;">
-            <textarea id="ai-result" readonly style="width:100%; height:200px; background:rgba(10,12,18,0.5); border:1px solid var(--border-subtle); color:var(--text-primary); border-radius:var(--radius-md); padding:10px; font-family:'Inter',sans-serif; font-size:.82rem; resize:vertical; line-height:1.5;"></textarea>
+            <textarea id="ai-result" readonly style="width:100%; height:200px; background:var(--rb-sunken); border:3px solid var(--rb-black); color:var(--rb-black); padding:10px; font-family:'Space Mono',monospace; font-size:.82rem; resize:vertical; line-height:1.5;"></textarea>
           </div>
         </div>
       </div><!-- /panel-ai -->
@@ -865,7 +865,7 @@
             <h4>🏷️ Hashtags</h4>
             <div id="modal-hashtags" class="ai-content-box"></div>
           </div>
-          <button type="button" class="btn" id="modal-btn-copy-all" style="width:100%; margin-top:12px; background:var(--bg-hover);">📋 Copy Semua</button>
+          <button type="button" class="btn" id="modal-btn-copy-all" style="width:100%; margin-top:12px;">📋 Copy Semua</button>
         </div>
       </div>
     </div>

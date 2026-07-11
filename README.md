@@ -58,7 +58,7 @@ ProjectClipper/
 ├── templates/
 │   └── index.html      # UI utama
 ├── static/
-│   ├── style.css       # Styling premium dark
+│   ├── style.css       # RawBlock brutalist design system
 │   └── app.js          # Frontend logic
 └── outputs/            # Hasil video (auto-dibuat)
 ```
