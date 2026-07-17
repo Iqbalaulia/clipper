@@ -493,6 +493,9 @@ def generate_copy():
     end_time = data.get("end", "")
     clip_title = data.get("clip_title", "")
     clip_context = data.get("clip_context", "")
+    language = (data.get("language") or "id").strip().lower()
+    if language not in ("id", "en"):
+        language = "id"
 
     if not url or not api_key:
         return jsonify({"error": "URL dan API Key wajib diisi"}), 400
@@ -521,7 +524,25 @@ def generate_copy():
                 time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan copywriting kamu relevan dengan cuplikan spesifik ini!"
 
         # 2. Siapkan prompt untuk Gemini
-        prompt = f"""Kamu adalah Social Media Manager profesional. Buatkan draft copywriting viral untuk TikTok, Instagram Reels, dan YouTube Shorts berdasarkan video berikut:
+        if language == "en":
+            prompt = f"""You are a professional Social Media Manager. Create a viral copywriting draft for TikTok, Instagram Reels, and YouTube Shorts based on the following video:
+Title: {title}
+Description: {description}{time_context}
+
+Desired output format:
+🌟 **VIDEO TITLE (Hook/Bait):**
+(Write 1 attention-grabbing title sentence)
+
+📝 **CAPTION:**
+(Write 2-3 short engaging paragraphs, casual and relevant)
+
+🔥 **CALL TO ACTION (CTA):**
+(Invite viewers to interact such as like, comment, or follow)
+
+🏷️ **HASHTAGS:**
+(5-8 relevant hashtags)"""
+        else:
+            prompt = f"""Kamu adalah Social Media Manager profesional. Buatkan draft copywriting viral untuk TikTok, Instagram Reels, dan YouTube Shorts berdasarkan video berikut:
 Judul: {title}
 Deskripsi: {description}{time_context}
 
@@ -542,7 +563,7 @@ Format output yang diinginkan:
         messages = [{"role": "user", "content": prompt}]
         try:
             generated_text, _ = _call_gemini(api_key, messages)
-            return jsonify({"copy": generated_text, "title": title})
+            return jsonify({"copy": generated_text, "title": title, "language": language})
         except Exception as e:
             return jsonify({"error": f"Gemini API Error: {str(e)}"}), 400
 

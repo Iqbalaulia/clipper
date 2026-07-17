@@ -17,7 +17,7 @@ from typing import List, Tuple, Optional, Callable
 def analyze_faces(
     video_path: str,
     sample_fps: float = 3.0,
-    min_detection_confidence: float = 0.5,
+    min_detection_confidence: float = 0.3,
     log_fn: Optional[Callable[[str], None]] = None,
 ) -> List[dict]:
     """

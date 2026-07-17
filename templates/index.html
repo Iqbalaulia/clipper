@@ -816,6 +816,17 @@
             </div>
           </div>
 
+          <div class="field" style="margin-bottom:12px;">
+            <label for="ai-language">Bahasa Copywriting</label>
+            <div class="input-wrap select-wrap">
+              <span class="input-icon">🌐</span>
+              <select id="ai-language">
+                <option value="id">🇮🇩 Indonesia</option>
+                <option value="en">🇬🇧 English</option>
+              </select>
+            </div>
+          </div>
+
           <button type="button" class="btn-clip" id="btn-generate-ai" style="margin-bottom:12px; width:100%;">
             <div class="spinner" id="ai-spinner" style="display:none;"></div>
             <span class="btn-label" id="ai-btn-label">✨ Generate Copy</span>
@@ -844,6 +855,17 @@
         <video id="modal-video-player" controls preload="metadata"></video>
       </div>
       <div class="modal-text-container">
+        <div class="field" style="margin-bottom:12px;">
+          <label for="modal-ai-language">Bahasa Copywriting</label>
+          <div class="input-wrap select-wrap">
+            <span class="input-icon">🌐</span>
+            <select id="modal-ai-language">
+              <option value="id">🇮🇩 Indonesia</option>
+              <option value="en">🇬🇧 English</option>
+            </select>
+          </div>
+        </div>
+
         <div id="modal-ai-spinner" style="display: none; text-align: center; padding: 20px;">
           <div class="spinner" style="margin: 0 auto;"></div>
           <p style="margin-top:10px; color:var(--text-muted);">Meng-generate copy (5-15d)...</p>

@@ -785,7 +785,7 @@ if (btnGenerateHook) {
       const res = await fetch('/generate-hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, api_key: apiKey, start, end, cookies }),
+        body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, language }),
       });
       
       const data = await res.json();
@@ -809,10 +809,64 @@ const aiBtnLabel     = $('ai-btn-label');
 const aiResultWrap   = $('ai-result-wrap');
 const aiResult       = $('ai-result');
 const btnCopyAi      = $('btn-copy-ai');
+const aiLanguage     = $('ai-language');
+const modalAiLanguage = $('modal-ai-language');
 
 // Load key from storage
 const savedKey = localStorage.getItem('clipper_gemini_key');
 if (savedKey) geminiKeyInput.value = savedKey;
+
+// Load saved language preference
+const savedAiLang = localStorage.getItem('clipper_ai_language') || 'id';
+if (aiLanguage) aiLanguage.value = savedAiLang;
+if (modalAiLanguage) modalAiLanguage.value = savedAiLang;
+
+// Sync language selectors
+function syncAiLanguage(lang) {
+  if (aiLanguage) aiLanguage.value = lang;
+  if (modalAiLanguage) modalAiLanguage.value = lang;
+  localStorage.setItem('clipper_ai_language', lang);
+}
+
+if (aiLanguage) {
+  aiLanguage.addEventListener('change', () => syncAiLanguage(aiLanguage.value));
+}
+if (modalAiLanguage) {
+  modalAiLanguage.addEventListener('change', () => syncAiLanguage(modalAiLanguage.value));
+}
+
+// Labels for AI copy sections per language
+const AI_LABELS = {
+  id: {
+    title: '🌟 Judul Video',
+    caption: '📝 Caption',
+    cta: '🔥 Call to Action (CTA)',
+    hashtags: '🏷️ Hashtags',
+    copyBtn: '📋 Copy Semua',
+    copied: '✅ Berhasil Disalin!'
+  },
+  en: {
+    title: '🌟 Video Title',
+    caption: '📝 Caption',
+    cta: '🔥 Call to Action (CTA)',
+    hashtags: '🏷️ Hashtags',
+    copyBtn: '📋 Copy All',
+    copied: '✅ Copied!'
+  }
+};
+
+function updateModalCopyLabels(language) {
+  const labels = AI_LABELS[language] || AI_LABELS.id;
+  const titleEl = clipModal.querySelector('.ai-section:nth-of-type(1) h4');
+  const captionEl = clipModal.querySelector('.ai-section:nth-of-type(2) h4');
+  const ctaEl = clipModal.querySelector('.ai-section:nth-of-type(3) h4');
+  const tagsEl = clipModal.querySelector('.ai-section:nth-of-type(4) h4');
+  if (titleEl) titleEl.textContent = labels.title;
+  if (captionEl) captionEl.textContent = labels.caption;
+  if (ctaEl) ctaEl.textContent = labels.cta;
+  if (tagsEl) tagsEl.textContent = labels.hashtags;
+  if (modalBtnCopyAll) modalBtnCopyAll.textContent = labels.copyBtn;
+}
 
 btnGenerateAi.addEventListener('click', async () => {
   const url = urlInput.value.trim();
@@ -822,6 +876,9 @@ btnGenerateAi.addEventListener('click', async () => {
 
   if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
   if (!apiKey) return alert('Gemini API Key wajib diisi!');
+
+  const language = aiLanguage ? aiLanguage.value : 'id';
+  syncAiLanguage(language);
 
   // Save key
   localStorage.setItem('clipper_gemini_key', apiKey);
@@ -842,7 +899,7 @@ btnGenerateAi.addEventListener('click', async () => {
     const res = await fetch('/generate-copy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, api_key: apiKey, start, end, cookies }),
+      body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, language }),
     });
     
     const data = await res.json();
@@ -1554,10 +1611,17 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
   const apiKey = localStorage.getItem('clipper_gemini_key') || (ctrlApiKey ? ctrlApiKey.value : '');
   const url = ctrlVideoUrl || urlInput.value;
   const cookies = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
+  const language = modalAiLanguage ? modalAiLanguage.value : (aiLanguage ? aiLanguage.value : 'id');
+  syncAiLanguage(language);
+
+  const langLabels = AI_LABELS[language] || AI_LABELS.id;
+  updateModalCopyLabels(language);
 
   if (!apiKey) {
     modalAiSpinner.style.display = 'none';
-    modalTitleHooks.textContent = "Error: Gemini API Key belum diisi. Silakan isi di bagian Manual Clip atau Auto Clip.";
+    modalTitleHooks.textContent = language === 'en'
+      ? "Error: Gemini API Key is required. Please fill it in the Manual Clip or Auto Clip section."
+      : "Error: Gemini API Key belum diisi. Silakan isi di bagian Manual Clip atau Auto Clip.";
     modalAiResult.style.display = 'block';
     return;
   }
@@ -1577,13 +1641,13 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
     const res = await fetch('/generate-copy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, clip_title: clipTitle, clip_context: clipContext }),
+      body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, clip_title: clipTitle, clip_context: clipContext, language }),
     });
     
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan saat meng-generate copy.');
 
-    parseAndRenderCopy(data.copy);
+    parseAndRenderCopy(data.copy, data.language);
     
     modalAiSpinner.style.display = 'none';
     modalAiResult.style.display = 'block';
@@ -1594,12 +1658,13 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
   }
 }
 
-function parseAndRenderCopy(markdownText) {
-  // Regex untuk memecah respons Llama 3 berdasarkan heading
-  const titleMatch = markdownText.match(/JUDUL VIDEO.*?\n([^]*?)(?=\n📝|\n🔥|\n🏷️|$)/i);
-  const captionMatch = markdownText.match(/CAPTION.*?\n([^]*?)(?=\n🔥|\n🏷️|$)/i);
-  const ctaMatch = markdownText.match(/CALL TO ACTION.*?\n([^]*?)(?=\n🏷️|$)/i);
-  const tagsMatch = markdownText.match(/HASHTAGS.*?\n([^]*?)$/i);
+function parseAndRenderCopy(markdownText, language) {
+  const lang = language || (modalAiLanguage ? modalAiLanguage.value : (aiLanguage ? aiLanguage.value : 'id'));
+  // Parse AI response using emoji section delimiters (works for both id and en)
+  const titleMatch = markdownText.match(/🌟\s*(?:JUDUL VIDEO|VIDEO TITLE|Title|Judul).*?\n([^]*?)(?=\n📝|\n🔥|\n🏷️|$)/i);
+  const captionMatch = markdownText.match(/📝\s*CAPTION.*?\n([^]*?)(?=\n🔥|\n🏷️|$)/i);
+  const ctaMatch = markdownText.match(/🔥\s*(?:CALL TO ACTION|CTA).*?\n([^]*?)(?=\n🏷️|$)/i);
+  const tagsMatch = markdownText.match(/🏷️\s*(?:HASHTAGS|HASHTAG).*?\n([^]*?)$/i);
 
   modalTitleHooks.textContent = titleMatch ? titleMatch[1].trim() : '-';
   modalCaption.textContent = captionMatch ? captionMatch[1].trim() : '-';
@@ -1609,13 +1674,20 @@ function parseAndRenderCopy(markdownText) {
 
 if (modalBtnCopyAll) {
   modalBtnCopyAll.addEventListener('click', () => {
-    const textToCopy = `[JUDUL]\n${modalTitleHooks.textContent}\n\n[CAPTION]\n${modalCaption.textContent}\n\n[CTA]\n${modalCta.textContent}\n\n[HASHTAGS]\n${modalHashtags.textContent}`;
+    const lang = modalAiLanguage ? modalAiLanguage.value : (aiLanguage ? aiLanguage.value : 'id');
+    const labels = AI_LABELS[lang] || AI_LABELS.id;
+    const sectionTitles = {
+      id: { title: 'JUDUL', caption: 'CAPTION', cta: 'CTA', hashtags: 'HASHTAGS' },
+      en: { title: 'TITLE', caption: 'CAPTION', cta: 'CTA', hashtags: 'HASHTAGS' }
+    };
+    const t = sectionTitles[lang] || sectionTitles.id;
+    const textToCopy = `[${t.title}]\n${modalTitleHooks.textContent}\n\n[${t.caption}]\n${modalCaption.textContent}\n\n[${t.cta}]\n${modalCta.textContent}\n\n[${t.hashtags}]\n${modalHashtags.textContent}`;
     navigator.clipboard.writeText(textToCopy).then(() => {
       const oldText = modalBtnCopyAll.textContent;
-      modalBtnCopyAll.textContent = '✅ Berhasil Disalin!';
+      modalBtnCopyAll.textContent = labels.copied;
       setTimeout(() => modalBtnCopyAll.textContent = oldText, 2000);
     }).catch(err => {
-      alert("Gagal menyalin teks: " + err);
+      alert(lang === 'en' ? "Failed to copy text: " + err : "Gagal menyalin teks: " + err);
     });
   });
 }
