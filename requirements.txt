@@ -3,3 +3,4 @@ yt-dlp
 requests
 mediapipe
 opencv-python-headless
+faster-whisper  # optional: untuk transkripsi lokal jika YouTube subtitle tidak tersedia

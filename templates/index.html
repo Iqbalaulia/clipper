@@ -165,6 +165,8 @@
         <!-- Highlighted clip region -->
         <div class="timeline-clip-region" id="timeline-clip-region">
           <span class="timeline-clip-label" id="timeline-clip-label"></span>
+          <div class="timeline-handle" id="timeline-handle-start" data-handle="start" title="Drag untuk mengubah waktu mulai"></div>
+          <div class="timeline-handle" id="timeline-handle-end" data-handle="end" title="Drag untuk mengubah waktu selesai"></div>
         </div>
       </div>
       <!-- Progress section (shown during processing) -->
@@ -291,6 +293,29 @@
                       <option value="id">🇮🇩 Indonesia</option>
                       <option value="en">🇬🇧 English</option>
                       <option value="id,en" selected>🌐 Indonesia + English</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field" style="flex:1; min-width:120px;">
+                  <label for="ctrl-subtitle-source">Sumber Transkripsi</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🎙️</span>
+                    <select id="ctrl-subtitle-source">
+                      <option value="auto">Auto — YouTube + Whisper</option>
+                      <option value="youtube">YouTube</option>
+                      <option value="whisper">Whisper</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field" id="ctrl-whisper-model-field" style="flex:1; min-width:120px; display:none;">
+                  <label for="ctrl-whisper-model">Model Whisper</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🧠</span>
+                    <select id="ctrl-whisper-model">
+                      <option value="tiny">tiny</option>
+                      <option value="base" selected>base</option>
+                      <option value="small">small</option>
+                      <option value="medium">medium</option>
                     </select>
                   </div>
                 </div>
@@ -557,6 +582,34 @@
                       </div>
                     </div>
 
+                    <!-- Subtitle source selector -->
+                    <div class="sub-options-grid" style="margin-top:10px;">
+                      <div class="field">
+                        <label for="subtitle-source">Sumber Transkripsi</label>
+                        <div class="input-wrap select-wrap">
+                          <span class="input-icon">🎙️</span>
+                          <select id="subtitle-source">
+                            <option value="auto">Auto — YouTube dulu, lalu Whisper</option>
+                            <option value="youtube">YouTube Subtitle</option>
+                            <option value="whisper">Whisper Lokal</option>
+                          </select>
+                        </div>
+                        <span class="field-hint">Whisper memerlukan install <code>faster-whisper</code></span>
+                      </div>
+                      <div class="field" id="whisper-model-field" style="display:none;">
+                        <label for="whisper-model">Model Whisper</label>
+                        <div class="input-wrap select-wrap">
+                          <span class="input-icon">🧠</span>
+                          <select id="whisper-model">
+                            <option value="tiny">tiny (cepat, kurang akurat)</option>
+                            <option value="base" selected>base (seimbang)</option>
+                            <option value="small">small (akurat, lambat)</option>
+                            <option value="medium">medium (sangat akurat, berat)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
                     <!-- Position selector (burn-in only) -->
                     <div class="position-row" id="position-row">
                       <p class="position-label">📍 Posisi Subtitle (Burn-in)</p>
@@ -633,10 +686,15 @@
                 </div>
 
                 <!-- Submit -->
-                <button type="button" class="btn-clip" id="btn-clip">
-                  <div class="spinner"></div>
-                  <span class="btn-label">✂️ &nbsp;Potong Video</span>
-                </button>
+                <div style="display:flex; gap:10px; margin-top:12px;">
+                  <button type="button" class="btn-clip" id="btn-clip" style="flex:1;">
+                    <div class="spinner"></div>
+                    <span class="btn-label">✂️ &nbsp;Potong Video</span>
+                  </button>
+                  <button type="button" class="btn-secondary" id="btn-preview" style="flex:1; padding:10px 16px; font-size:0.82rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">
+                    ▶ Preview
+                  </button>
+                </div>
 
               </div>
             </form>

@@ -1,0 +1,20 @@
+2026-07-17 23:32:27,105 [INFO] clipper: Task queue started with 2 workers
+2026-07-17 23:32:42,663 [INFO] clipper: Task queue started with 2 workers
+2026-07-17 23:32:56,542 [INFO] clipper: Task queue started with 2 workers
+2026-07-17 23:32:56,575 [INFO] werkzeug: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.4:5000
+2026-07-17 23:32:56,576 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-07-17 23:33:00,999 [INFO] werkzeug: 127.0.0.1 - - [17/Jul/2026 23:33:00] "GET /check-deps HTTP/1.1" 200 -
+2026-07-17 23:33:01,299 [INFO] werkzeug: 127.0.0.1 - - [17/Jul/2026 23:33:01] "GET /queue-status HTTP/1.1" 200 -
+2026-07-17 23:35:50,125 [INFO] clipper: Task queue started with 2 workers
+2026-07-17 23:35:50,149 [INFO] werkzeug: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.4:5000
+2026-07-17 23:35:50,149 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-07-17 23:35:52,930 [INFO] clipper: Task 388ed638-5443-48b7-8b4b-356fba27206e submitted to queue
+2026-07-17 23:35:52,932 [INFO] werkzeug: 127.0.0.1 - - [17/Jul/2026 23:35:52] "POST /clip HTTP/1.1" 200 -
+2026-07-17 23:35:52,953 [INFO] clipper: Task 388ed638-5443-48b7-8b4b-356fba27206e picked up by worker
+2026-07-17 23:35:55,270 [INFO] werkzeug: 127.0.0.1 - - [17/Jul/2026 23:35:55] "GET /queue-status HTTP/1.1" 200 -

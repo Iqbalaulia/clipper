@@ -11,49 +11,35 @@ import re
 import sys
 from typing import Dict, Any
 import face_tracker
+import models
+import runner
 
-# Shared progress state across tasks
-_tasks: Dict[str, Any] = {}
-_lock = threading.Lock()
 # Global lock to prevent multiple yt-dlp instances from downloading the same video concurrently
 DOWNLOAD_LOCK = threading.Lock()
 
 
 def create_task() -> str:
-    """Create a new task and return its ID."""
+    """Create a new task and return its ID. (kept for compatibility)"""
     task_id = str(uuid.uuid4())
-    with _lock:
-        _tasks[task_id] = {
-            "status": "pending",      # pending | downloading | subtitles | cutting | embedding | done | error
-            "progress": 0,
-            "logs": [],
-            "output_file": None,
-            "error": None,
-        }
+    models.create_task(task_id)
     return task_id
 
 
 def get_task(task_id: str) -> dict | None:
-    with _lock:
-        return _tasks.get(task_id)
+    return models.get_task(task_id)
 
 
 def get_tasks_batch(task_ids: list) -> dict:
     """Return a dict of {task_id: task_data} for all given task IDs."""
-    with _lock:
-        return {tid: _tasks.get(tid) for tid in task_ids if tid in _tasks}
+    return {tid: models.get_task(tid) for tid in task_ids}
 
 
 def _update_task(task_id: str, **kwargs):
-    with _lock:
-        if task_id in _tasks:
-            _tasks[task_id].update(kwargs)
+    models.update_task(task_id, **kwargs)
 
 
 def _append_log(task_id: str, message: str):
-    with _lock:
-        if task_id in _tasks:
-            _tasks[task_id]["logs"].append(message)
+    models.append_log(task_id, message)
 
 
 def _seconds_to_ffmpeg(ts: str) -> str:
@@ -319,6 +305,49 @@ def _normalize_ts_to_srt(ts: str) -> str:
     return ts
 
 
+def _transcribe_with_whisper(
+    task_id: str,
+    video_path: str,
+    output_dir: str,
+    model_size: str = "base",
+    language: str = "",
+) -> str | None:
+    """
+    Try to transcribe a video using faster-whisper and write an SRT file.
+    Returns the path to the SRT file, or None if unavailable/failed.
+    """
+    try:
+        import whisper_engine
+    except ImportError:
+        _append_log(task_id, "⚠️ Modul whisper_engine tidak ditemukan.")
+        return None
+
+    if not whisper_engine.is_available():
+        _append_log(task_id, "⚠️ faster-whisper tidak terinstall. Jalankan: pip install faster-whisper")
+        return None
+
+    first_lang = (language or "auto").split(",")[0].strip() or None
+    if first_lang == "auto":
+        first_lang = None
+
+    _append_log(task_id, f"[CC] Mencoba transkripsi lokal dengan Whisper (model={model_size})...")
+    try:
+        segments = whisper_engine.transcribe(
+            video_path,
+            model_size=model_size,
+            language=first_lang,
+        )
+        srt_text = whisper_engine.segments_to_srt(segments)
+        srt_path = os.path.join(output_dir, f"_whisper_{task_id}.srt")
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_text)
+        _append_log(task_id, f"[CC] Whisper selesai: {len(segments)} segmen.")
+        return srt_path
+    except Exception as e:
+        _append_log(task_id, f"⚠️ Whisper gagal: {e}")
+        return None
+
+
 def _strip_sub_tags(text: str) -> str:
     """Remove HTML/VTT tags and cue settings from subtitle text lines."""
     # Remove <c>, <b>, <i>, <u>, </c>, etc. and timestamp tags <00:01:02.345>
@@ -566,6 +595,8 @@ def run_clip(
     hook_position: str = "top",
     cookies: str = "",
     auto_broll: bool = False,
+    transcription_source: str = "auto",
+    whisper_model: str = "base",
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
@@ -614,8 +645,8 @@ def run_clip(
                     if cookies:
                         sub_cmd += ["--cookies", cookies]
                     sub_cmd.append(url)
-                    subprocess.run(
-                        sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    runner.run(
+                        task_id, sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         text=True, encoding="utf-8", errors="replace"
                     )
                     # Check for the task-specific download
@@ -683,28 +714,37 @@ def run_clip(
                     yt_dlp_cmd.append(url)
                     _append_log(task_id, f"[>>] Percobaan {attempt_idx + 1}/{len(download_attempts)} ({label}): {' '.join(yt_dlp_cmd)}")
 
-                    proc = subprocess.Popen(
-                        yt_dlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    proc = runner.TrackedPopen(
+                        task_id, yt_dlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         text=True, encoding="utf-8", errors="replace"
                     )
 
                     output_lines = []
-                    while True:
-                        line = proc.stdout.readline()
-                        if not line and proc.poll() is not None:
-                            break
-                        if line:
-                            line = line.strip()
-                            output_lines.append(line)
-                            # Filter output for progress
-                            if "[download]" in line and "%" in line:
-                                m = re.search(r"\[download\]\s+([\d.]+)%", line)
-                                if m:
-                                    _update_task(task_id, progress=int(5 + float(m.group(1)) * 0.55))
-                            elif "[youtube]" in line or "ERROR:" in line or "[Merger]" in line or "WARNING:" in line:
-                                _append_log(task_id, line)
-
-                    proc.wait()
+                    try:
+                        while True:
+                            line = proc.stdout.readline()
+                            if not line and proc.poll() is not None:
+                                break
+                            if runner.is_cancelled(task_id):
+                                break
+                            if line:
+                                line = line.strip()
+                                output_lines.append(line)
+                                # Filter output for progress
+                                if "[download]" in line and "%" in line:
+                                    m = re.search(r"\[download\]\s+([\d.]+)%", line)
+                                    if m:
+                                        _update_task(task_id, progress=int(5 + float(m.group(1)) * 0.55))
+                                elif "[youtube]" in line or "ERROR:" in line or "[Merger]" in line or "WARNING:" in line:
+                                    _append_log(task_id, line)
+                    finally:
+                        try:
+                            if proc.returncode is None:
+                                proc.terminate()
+                                proc.wait(timeout=2.0)
+                        except Exception:
+                            pass
+                        runner.unregister_proc(task_id)
 
                     if proc.returncode != 0:
                         _append_log(task_id, f"⚠️ Percobaan {attempt_idx + 1} gagal (exit {proc.returncode}), memverifikasi file...")
@@ -760,8 +800,8 @@ def run_clip(
                     if cookies:
                         sub_cmd += ["--cookies", cookies]
                     sub_cmd.append(url)
-                    subprocess.run(
-                        sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    runner.run(
+                        task_id, sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                         text=True, encoding="utf-8", errors="replace"
                     )
                     # Find the task-specific subtitle file
@@ -855,8 +895,57 @@ def run_clip(
                 else:
                     _append_log(task_id, f"[CC] Timestamp disesuaikan. {entry_count} baris subtitle siap.")
             else:
-                _append_log(task_id, "[!] Subtitle tidak ditemukan — lanjut tanpa subtitle.")
-                subtitle_enabled = False
+                _append_log(task_id, "[!] Subtitle tidak ditemukan — mencoba alternatif...")
+                # Try Whisper if requested or auto
+                if downloaded_file and transcription_source in ("auto", "whisper"):
+                    whisper_srt = _transcribe_with_whisper(
+                        task_id, downloaded_file, output_dir,
+                        model_size=whisper_model, language=subtitle_lang,
+                    )
+                    if whisper_srt:
+                        subtitle_file = whisper_srt
+                        _append_log(task_id, f"[CC] Menggunakan subtitle Whisper: {os.path.basename(subtitle_file)}")
+                        # Re-enter the subtitle processing block
+                        try:
+                            with open(subtitle_file, "r", encoding="utf-8", errors="replace") as sfh:
+                                raw_srt = sfh.read()
+                            snap_segments = _parse_srt(raw_srt)
+                            snapped_start, snapped_end = _snap_to_sentence_boundaries(
+                                snap_segments,
+                                _parse_seconds(start),
+                                _parse_seconds(end),
+                                duration_secs=None,
+                                min_duration=1.0,
+                                max_duration=float('inf'),
+                            )
+                            if abs(snapped_start - _parse_seconds(start)) > 0.5 or abs(snapped_end - _parse_seconds(end)) > 0.5:
+                                _append_log(
+                                    task_id,
+                                    f"[CONTEXT] Menyesuaikan batas clip ke batas kalimat: "
+                                    f"{start}-{end} -> {_seconds_to_hhmmss(snapped_start)}-{_seconds_to_hhmmss(snapped_end)}"
+                                )
+                                start = _seconds_to_hhmmss(snapped_start)
+                                end = _seconds_to_hhmmss(snapped_end)
+                        except Exception as e:
+                            _append_log(task_id, f"[CONTEXT] Gagal snap ke batas kalimat: {e}")
+
+                        shifted_sub_path = os.path.join(output_dir, f"_sub_{task_id}.srt")
+                        start_sec = _parse_seconds(start)
+                        fast_seek_sec = max(0.0, start_sec - 30.0)
+                        sub_shift_sec = fast_seek_sec if subtitle_type == "burn" else start_sec
+                        entry_count = _shift_srt(subtitle_file, sub_shift_sec, shifted_sub_path, sub_case, subtitle_style)
+                        if entry_count == 0 or not _validate_srt_file(shifted_sub_path):
+                            _append_log(task_id, "[!] Subtitle Whisper kosong setelah diproses — lanjut tanpa subtitle.")
+                            subtitle_enabled = False
+                            shifted_sub_path = None
+                        else:
+                            _append_log(task_id, f"[CC] Timestamp Whisper disesuaikan. {entry_count} baris subtitle siap.")
+                    else:
+                        _append_log(task_id, "⚠️ Whisper tidak menghasilkan subtitle — lanjut tanpa subtitle.")
+                        subtitle_enabled = False
+                else:
+                    _append_log(task_id, "⚠️ Tidak ada sumber subtitle tersedia — lanjut tanpa subtitle.")
+                    subtitle_enabled = False
 
         # ── Step 2b: Speaker Tracking (if vertical-speaker or vertical-speaker-blur) ─
         speaker_crop_filter = None
@@ -1365,7 +1454,8 @@ def _run_ffmpeg(
     end_str: str = "0",
 ):
     """Run an FFmpeg command and stream its output to task logs with progress mapping."""
-    with subprocess.Popen(
+    with runner.TrackedPopen(
+        task_id,
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -1427,19 +1517,43 @@ def start_clip_thread(
     hook_position: str = "top",
     cookies: str = "",
     auto_broll: bool = False,
+    transcription_source: str = "auto",
+    whisper_model: str = "base",
 ):
     """
-    Menjalankan proses pemotongan di thread terpisah."""
-    t = threading.Thread(
-        target=run_clip,
-        args=(task_id, url, start, end, output_dir,
-              subtitle_enabled, subtitle_lang, subtitle_type,
-              subtitle_auto, subtitle_position, sub_fontsize, sub_case,
-              sub_bold, sub_italic, sub_underline, subtitle_style, video_format, bgm_type,
-              sub_primary_color, sub_outline_color, sub_back_color,
-              sub_back_alpha, sub_border_style, sub_outline_width, sub_shadow,
-              hook_title, hook_fontsize, hook_preset, hook_position, cookies, auto_broll),
-        daemon=True,
-    )
-    t.start()
-    return t
+    Menjalankan proses pemotongan di thread terpisah.
+    Sekarang menggunakan task queue daripada thread satu per task.
+    """
+    import task_queue as q_module
+    kwargs = {
+        "subtitle_enabled": subtitle_enabled,
+        "subtitle_lang": subtitle_lang,
+        "subtitle_type": subtitle_type,
+        "subtitle_auto": subtitle_auto,
+        "subtitle_position": subtitle_position,
+        "sub_fontsize": sub_fontsize,
+        "sub_case": sub_case,
+        "sub_bold": sub_bold,
+        "sub_italic": sub_italic,
+        "sub_underline": sub_underline,
+        "subtitle_style": subtitle_style,
+        "video_format": video_format,
+        "bgm_type": bgm_type,
+        "sub_primary_color": sub_primary_color,
+        "sub_outline_color": sub_outline_color,
+        "sub_back_color": sub_back_color,
+        "sub_back_alpha": sub_back_alpha,
+        "sub_border_style": sub_border_style,
+        "sub_outline_width": sub_outline_width,
+        "sub_shadow": sub_shadow,
+        "hook_title": hook_title,
+        "hook_fontsize": hook_fontsize,
+        "hook_preset": hook_preset,
+        "hook_position": hook_position,
+        "cookies": cookies,
+        "auto_broll": auto_broll,
+        "transcription_source": transcription_source,
+        "whisper_model": whisper_model,
+    }
+    q_module.submit_task(task_id, url, start, end, output_dir, kwargs)
+    return None

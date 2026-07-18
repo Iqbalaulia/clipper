@@ -833,6 +833,28 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   white-space: nowrap;
 }
 
+.timeline-handle {
+  position: absolute;
+  top: 0;
+  width: 12px;
+  height: 100%;
+  background: var(--rb-black);
+  cursor: ew-resize;
+  pointer-events: auto;
+  z-index: 2;
+  transition: background .15s, width .15s;
+}
+
+.timeline-handle:hover,
+.timeline-handle.dragging {
+  background: var(--rb-white);
+  border: 2px solid var(--rb-black);
+  width: 14px;
+}
+
+#timeline-handle-start { left: 0; transform: translateX(-50%); }
+#timeline-handle-end { right: 0; transform: translateX(50%); }
+
 /* Progress in timeline */
 .timeline-progress-section {
   display: none;

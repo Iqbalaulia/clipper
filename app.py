@@ -6,8 +6,12 @@ import os
 import json
 import time
 import sys
+import uuid
+import logging
+from datetime import datetime
 import requests
 import subprocess
+import shutil
 from flask import (
     Flask,
     render_template,
@@ -18,17 +22,41 @@ from flask import (
     stream_with_context,
 )
 import clipper
+import models
+import task_queue
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
 COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
+LOGS_DIR    = os.path.join(BASE_DIR, "logs")
 
 # Pastikan runtime Node.js bawaan (node.exe di folder proyek) bisa ditemukan
 # oleh subprocess yt-dlp meskipun aplikasi dijalankan dari cwd lain.
 os.environ["PATH"] = BASE_DIR + os.pathsep + os.environ.get("PATH", "")
 
+os.makedirs(LOGS_DIR, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(os.path.join(LOGS_DIR, "clipper.log"), encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger("clipper")
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max request
+
+# Mark any tasks that were running when the server last stopped as errored
+stale_count = models.reset_stale_tasks()
+if stale_count:
+    logger.info("Marked %d stale tasks as error after restart", stale_count)
+
+# Start the task queue
+MAX_CONCURRENT_WORKERS = int(os.environ.get("CLIPPER_MAX_WORKERS", "2"))
+TASK_TIMEOUT = int(os.environ.get("CLIPPER_TASK_TIMEOUT", "3600"))
+task_queue.get_queue(max_workers=MAX_CONCURRENT_WORKERS, task_timeout=TASK_TIMEOUT)
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -194,46 +222,64 @@ def clip():
     hook_position     = (data.get("hook_position") or "top").strip()
     
     auto_broll        = bool(data.get("auto_broll", False))
+    transcription_source = (data.get("transcription_source") or "auto").strip()
+    whisper_model     = (data.get("whisper_model") or "base").strip()
     
     cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
 
-    task_id = clipper.create_task()
+    # Disk space check (rough estimate: 500 MB minimum)
+    if not _has_enough_disk_space(OUTPUT_DIR, min_bytes=500 * 1024 * 1024):
+        return jsonify({"error": "Ruang disk tidak mencukupi. Silakan kosongkan minimal 500 MB."}), 507
 
-    clipper.start_clip_thread(
-        task_id=task_id,
-        url=url,
-        start=start,
-        end=end,
-        output_dir=OUTPUT_DIR,
-        subtitle_enabled=subtitle_enabled,
-        subtitle_lang=subtitle_lang,
-        subtitle_type=subtitle_type,
-        subtitle_auto=subtitle_auto,
-        subtitle_position=subtitle_position,
-        sub_fontsize=sub_fontsize,
-        sub_case=sub_case,
-        sub_bold=sub_bold,
-        sub_italic=sub_italic,
-        sub_underline=sub_underline,
-        subtitle_style=subtitle_style,
-        video_format=video_format,
-        bgm_type=bgm_type,
-        sub_primary_color=sub_primary_color,
-        sub_outline_color=sub_outline_color,
-        sub_back_color=sub_back_color,
-        sub_back_alpha=sub_back_alpha,
-        sub_border_style=sub_border_style,
-        sub_outline_width=sub_outline_width,
-        sub_shadow=sub_shadow,
-        hook_title=hook_title,
-        hook_fontsize=hook_fontsize,
-        hook_preset=hook_preset,
-        hook_position=hook_position,
-        cookies=cookies_file,
-        auto_broll=auto_broll,
-    )
+    task_id = str(uuid.uuid4())
+    kwargs = {
+        "subtitle_enabled": subtitle_enabled,
+        "subtitle_lang": subtitle_lang,
+        "subtitle_type": subtitle_type,
+        "subtitle_auto": subtitle_auto,
+        "subtitle_position": subtitle_position,
+        "sub_fontsize": sub_fontsize,
+        "sub_case": sub_case,
+        "sub_bold": sub_bold,
+        "sub_italic": sub_italic,
+        "sub_underline": sub_underline,
+        "subtitle_style": subtitle_style,
+        "video_format": video_format,
+        "bgm_type": bgm_type,
+        "sub_primary_color": sub_primary_color,
+        "sub_outline_color": sub_outline_color,
+        "sub_back_color": sub_back_color,
+        "sub_back_alpha": sub_back_alpha,
+        "sub_border_style": sub_border_style,
+        "sub_outline_width": sub_outline_width,
+        "sub_shadow": sub_shadow,
+        "hook_title": hook_title,
+        "hook_fontsize": hook_fontsize,
+        "hook_preset": hook_preset,
+        "hook_position": hook_position,
+        "cookies": cookies_file,
+        "auto_broll": auto_broll,
+        "transcription_source": transcription_source,
+        "whisper_model": whisper_model,
+    }
+    task_queue.submit_task(task_id=task_id, url=url, start=start, end=end, output_dir=OUTPUT_DIR, kwargs=kwargs)
 
     return jsonify({"task_id": task_id})
+
+
+@app.route("/cancel/<task_id>", methods=["POST"])
+def cancel_task(task_id: str):
+    """Cancel a queued or running task."""
+    ok = task_queue.cancel_task(task_id)
+    if not ok:
+        return jsonify({"error": "Task tidak ditemukan atau sudah selesai."}), 400
+    return jsonify({"success": True, "message": "Task dibatalkan."})
+
+
+@app.route("/queue-status")
+def queue_status():
+    """Return current task queue status."""
+    return jsonify(task_queue.queue_status())
 
 
 @app.route("/progress/<task_id>")
@@ -262,7 +308,7 @@ def progress(task_id: str):
             }
             yield _sse(payload)
 
-            if task["status"] in ("done", "error"):
+            if task["status"] in ("done", "error", "cancelled"):
                 break
 
             time.sleep(0.5)
@@ -281,6 +327,15 @@ def download(filename: str):
 
 def _sse(data: dict) -> str:
     return f"data: {json.dumps(data)}\n\n"
+
+
+def _has_enough_disk_space(path: str, min_bytes: int = 500 * 1024 * 1024) -> bool:
+    """Check whether the disk containing `path` has at least `min_bytes` free."""
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.free >= min_bytes
+    except Exception:
+        return True
 
 
 def _call_gemini(api_key: str, messages: list, response_json: bool = False,
@@ -523,47 +578,45 @@ def generate_copy():
             if start_time and end_time:
                 time_context = f"\nFokus pada klip yang diambil dari menit/detik ke-{start_time} hingga ke-{end_time}. Pastikan copywriting kamu relevan dengan cuplikan spesifik ini!"
 
-        # 2. Siapkan prompt untuk Gemini
+        # 2. Siapkan prompt untuk Gemini (minta output JSON)
         if language == "en":
             prompt = f"""You are a professional Social Media Manager. Create a viral copywriting draft for TikTok, Instagram Reels, and YouTube Shorts based on the following video:
 Title: {title}
 Description: {description}{time_context}
 
-Desired output format:
-🌟 **VIDEO TITLE (Hook/Bait):**
-(Write 1 attention-grabbing title sentence)
-
-📝 **CAPTION:**
-(Write 2-3 short engaging paragraphs, casual and relevant)
-
-🔥 **CALL TO ACTION (CTA):**
-(Invite viewers to interact such as like, comment, or follow)
-
-🏷️ **HASHTAGS:**
-(5-8 relevant hashtags)"""
+Return ONLY a valid JSON object with this exact structure (no markdown, no explanation):
+{{
+  "title": "1 attention-grabbing title sentence",
+  "caption": "2-3 short engaging paragraphs, casual and relevant",
+  "cta": "Invite viewers to interact such as like, comment, or follow",
+  "hashtags": "5-8 relevant hashtags as a single line"
+}}"""
         else:
             prompt = f"""Kamu adalah Social Media Manager profesional. Buatkan draft copywriting viral untuk TikTok, Instagram Reels, dan YouTube Shorts berdasarkan video berikut:
 Judul: {title}
 Deskripsi: {description}{time_context}
 
-Format output yang diinginkan:
-🌟 **JUDUL VIDEO (Bait/Hook):**
-(Tulis 1 kalimat judul yang bikin penasaran)
+Kembalikan HANYA objek JSON valid dengan struktur persis ini (tanpa markdown, tanpa penjelasan):
+{{
+  "title": "1 kalimat judul yang bikin penasaran",
+  "caption": "caption 2-3 paragraf singkat yang engaging, santai, dan relevan",
+  "cta": "Ajak penonton untuk interaksi seperti like, komen, atau follow",
+  "hashtags": "5-8 hashtag relevan dalam satu baris"
+}}"""
 
-📝 **CAPTION:**
-(Tulis caption 2-3 paragraf singkat yang engaging, santai, dan relevan)
-
-🔥 **CALL TO ACTION (CTA):**
-(Ajak penonton untuk interaksi seperti like, komen, atau follow)
-
-🏷️ **HASHTAGS:**
-(5-8 hashtag relevan)"""
-
-        # 3. Panggil Gemini API
+        # 3. Panggil Gemini API dengan response JSON
         messages = [{"role": "user", "content": prompt}]
         try:
-            generated_text, _ = _call_gemini(api_key, messages)
-            return jsonify({"copy": generated_text, "title": title, "language": language})
+            generated_text, _ = _call_gemini(api_key, messages, response_json=True)
+            copy_data = json.loads(generated_text)
+            return jsonify({
+                "title": title,
+                "language": language,
+                "title_hook": copy_data.get("title", ""),
+                "caption": copy_data.get("caption", ""),
+                "cta": copy_data.get("cta", ""),
+                "hashtags": copy_data.get("hashtags", ""),
+            })
         except Exception as e:
             return jsonify({"error": f"Gemini API Error: {str(e)}"}), 400
 
@@ -909,6 +962,8 @@ def clip_moments():
     sub_outline_width = str(data.get("sub_outline_width") or "2").strip()
     sub_shadow        = str(data.get("sub_shadow") or "1").strip()
     auto_broll        = bool(data.get("auto_broll", False))
+    transcription_source = (data.get("transcription_source") or "auto").strip()
+    whisper_model     = (data.get("whisper_model") or "base").strip()
 
     task_list = []
     for moment in moments:
@@ -916,40 +971,38 @@ def clip_moments():
         end   = str(moment.get("end",   "00:01:00"))
         title = str(moment.get("title", ""))
         
-        task_id = clipper.create_task()
-        clipper.start_clip_thread(
-            task_id=task_id,
-            url=url,
-            start=start,
-            end=end,
-            output_dir=OUTPUT_DIR,
-            video_format=data.get("video_format", "original"),
-            subtitle_enabled=subtitle_enabled,
-            subtitle_lang=subtitle_lang,
-            subtitle_type=subtitle_type,
-            subtitle_auto=subtitle_auto,
-            subtitle_position=subtitle_position,
-            sub_fontsize=sub_fontsize,
-            sub_case=sub_case,
-            sub_bold=sub_bold,
-            sub_italic=sub_italic,
-            sub_underline=sub_underline,
-            subtitle_style=subtitle_style,
-            sub_primary_color=sub_primary_color,
-            sub_outline_color=sub_outline_color,
-            sub_back_color=sub_back_color,
-            sub_back_alpha=sub_back_alpha,
-            sub_border_style=sub_border_style,
-            sub_outline_width=sub_outline_width,
-            sub_shadow=sub_shadow,
-            bgm_type=bgm_type,
-            hook_title=title,
-            hook_fontsize=str(data.get("hook_fontsize", "34")),
-            hook_preset=data.get("hook_preset", "yellow-pop"),
-            hook_position=data.get("hook_position", "top"),
-            cookies=cookies_file,
-            auto_broll=auto_broll,
-        )
+        task_id = str(uuid.uuid4())
+        kwargs = {
+            "subtitle_enabled": subtitle_enabled,
+            "subtitle_lang": subtitle_lang,
+            "subtitle_type": subtitle_type,
+            "subtitle_auto": subtitle_auto,
+            "subtitle_position": subtitle_position,
+            "sub_fontsize": sub_fontsize,
+            "sub_case": sub_case,
+            "sub_bold": sub_bold,
+            "sub_italic": sub_italic,
+            "sub_underline": sub_underline,
+            "subtitle_style": subtitle_style,
+            "video_format": data.get("video_format", "original"),
+            "bgm_type": bgm_type,
+            "sub_primary_color": sub_primary_color,
+            "sub_outline_color": sub_outline_color,
+            "sub_back_color": sub_back_color,
+            "sub_back_alpha": sub_back_alpha,
+            "sub_border_style": sub_border_style,
+            "sub_outline_width": sub_outline_width,
+            "sub_shadow": sub_shadow,
+            "hook_title": title,
+            "hook_fontsize": str(data.get("hook_fontsize", "34")),
+            "hook_preset": data.get("hook_preset", "yellow-pop"),
+            "hook_position": data.get("hook_position", "top"),
+            "cookies": cookies_file,
+            "auto_broll": auto_broll,
+            "transcription_source": transcription_source,
+            "whisper_model": whisper_model,
+        }
+        task_queue.submit_task(task_id, url, start, end, OUTPUT_DIR, kwargs)
         task_list.append({
             "task_id": task_id,
             "moment_index": moment.get("index", 0),

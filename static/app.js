@@ -17,6 +17,9 @@ const positionRow     = $('position-row');
 const styleRow        = $('style-row');
 const subFontsize     = $('sub-fontsize');
 const subCase         = $('sub-case');
+const subtitleSource  = $('subtitle-source');
+const whisperModel    = $('whisper-model');
+const whisperModelField = $('whisper-model-field');
 
 
 const subBold         = $('sub-bold');
@@ -58,6 +61,9 @@ const timelineInfo         = $('timeline-info');
 const timelineClipRegion   = $('timeline-clip-region');
 const timelineClipLabel    = $('timeline-clip-label');
 const timelineProgressSection = $('timeline-progress-section');
+const timelineTrack        = $('timeline-track');
+const timelineHandleStart  = $('timeline-handle-start');
+const timelineHandleEnd    = $('timeline-handle-end');
 
 // Workspace info cache
 let cachedVideoInfo = null;
@@ -75,6 +81,23 @@ const subShadowVal    = $('sub-shadow-val');
 // ═══════════════════════════════════════════════════════════════════
 // DASHBOARD NAVIGATION — Sidebar + Panel Tabs + Timeline
 // ═══════════════════════════════════════════════════════════════════
+
+// Auto-clip Whisper controls
+const ctrlSubtitleSource  = $('ctrl-subtitle-source');
+const ctrlWhisperModel    = $('ctrl-whisper-model');
+const ctrlWhisperModelField = $('ctrl-whisper-model-field');
+
+function syncSubtitleSource() {
+  if (subtitleSource && whisperModelField) {
+    whisperModelField.style.display = subtitleSource.value === 'whisper' ? 'block' : 'none';
+  }
+  if (ctrlSubtitleSource && ctrlWhisperModelField) {
+    ctrlWhisperModelField.style.display = ctrlSubtitleSource.value === 'whisper' ? 'block' : 'none';
+  }
+}
+
+if (subtitleSource) subtitleSource.addEventListener('change', syncSubtitleSource);
+if (ctrlSubtitleSource) ctrlSubtitleSource.addEventListener('change', syncSubtitleSource);
 
 // ── Sidebar Navigation ───────────────────────────────────────────
 document.querySelectorAll('.nav-item[data-target]').forEach(item => {
@@ -125,37 +148,117 @@ function generateWaveform() {
   }
 }
 
-// ── Highlight region on timeline ────────────────────────────────
-function highlightTimeline(startStr, endStr, totalDuration) {
-  if (!timelineClipRegion) return;
-  
-  const startSec = parseTimeToSeconds(startStr);
-  const endSec = parseTimeToSeconds(endStr);
-  const duration = totalDuration || Math.max(endSec * 1.2, 600);
-  
-  const leftPct = (startSec / duration) * 100;
-  const widthPct = ((endSec - startSec) / duration) * 100;
-  
-  timelineClipRegion.style.left = leftPct + '%';
-  timelineClipRegion.style.width = widthPct + '%';
+// ── Interactive Timeline ────────────────────────────────────────────────
+let timelineDuration = 0; // in seconds
+let timelineStartSec = 0;
+let timelineEndSec   = 0;
+let isDragging = null; // 'start' | 'end' | null
+
+function secondsToHMS(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function setTimelineDuration(seconds) {
+  timelineDuration = Math.max(seconds || 0, 1);
+}
+
+function updateTimelineUI() {
+  if (!timelineClipRegion || timelineDuration <= 0) return;
+
+  const startPct = (timelineStartSec / timelineDuration) * 100;
+  const widthPct = ((timelineEndSec - timelineStartSec) / timelineDuration) * 100;
+
+  timelineClipRegion.style.left = Math.max(0, startPct) + '%';
+  timelineClipRegion.style.width = Math.max(0, widthPct) + '%';
   timelineClipRegion.classList.add('active');
-  
-  if (timelineClipLabel) {
-    timelineClipLabel.textContent = `${startStr} → ${endStr}`;
-  }
-  
-  if (timelineInfo) {
-    timelineInfo.textContent = `${startStr} — ${endStr}`;
-  }
+
+  const startStr = secondsToHMS(timelineStartSec);
+  const endStr = secondsToHMS(timelineEndSec);
+
+  if (timelineClipLabel) timelineClipLabel.textContent = `${startStr} → ${endStr}`;
+  if (timelineInfo) timelineInfo.textContent = `${startStr} — ${endStr}`;
+
+  // Also sync time inputs if they exist and user isn't currently editing them
+  if (startInput && document.activeElement !== startInput) startInput.value = startStr;
+  if (endInput && document.activeElement !== endInput) endInput.value = endStr;
+}
+
+function highlightTimeline(startStr, endStr, totalDuration) {
+  timelineStartSec = parseTimeToSeconds(startStr);
+  timelineEndSec = parseTimeToSeconds(endStr);
+  setTimelineDuration(totalDuration || Math.max(timelineEndSec * 1.2, 600));
+  updateTimelineUI();
 }
 
 function clearTimelineHighlight() {
-  if (timelineClipRegion) {
-    timelineClipRegion.classList.remove('active');
+  if (timelineClipRegion) timelineClipRegion.classList.remove('active');
+  if (timelineInfo) timelineInfo.textContent = '00:00:00 — 00:00:00';
+  timelineStartSec = 0;
+  timelineEndSec = 0;
+  timelineDuration = 0;
+}
+
+function timelineXToSeconds(clientX) {
+  if (!timelineTrack) return 0;
+  const rect = timelineTrack.getBoundingClientRect();
+  const pct = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+  return pct * timelineDuration;
+}
+
+function handleTimelineMouseDown(e) {
+  if (!timelineTrack || timelineDuration <= 0) return;
+  e.preventDefault();
+
+  const target = e.target;
+  if (target.classList.contains('timeline-handle')) {
+    isDragging = target.dataset.handle;
+    target.classList.add('dragging');
+    return;
   }
-  if (timelineInfo) {
-    timelineInfo.textContent = '00:00:00 — 00:00:00';
+
+  // Click on track: move nearest handle
+  const clickSec = timelineXToSeconds(e.clientX);
+  const distStart = Math.abs(clickSec - timelineStartSec);
+  const distEnd = Math.abs(clickSec - timelineEndSec);
+  isDragging = distStart <= distEnd ? 'start' : 'end';
+  updateTimelineFromMouse(e.clientX);
+}
+
+function updateTimelineFromMouse(clientX) {
+  if (!isDragging || timelineDuration <= 0) return;
+  let sec = timelineXToSeconds(clientX);
+
+  if (isDragging === 'start') {
+    timelineStartSec = Math.min(sec, timelineEndSec - 1);
+  } else {
+    timelineEndSec = Math.max(sec, timelineStartSec + 1);
   }
+  updateTimelineUI();
+}
+
+function stopTimelineDrag() {
+  if (isDragging) {
+    const handle = isDragging === 'start' ? timelineHandleStart : timelineHandleEnd;
+    if (handle) handle.classList.remove('dragging');
+    isDragging = null;
+  }
+}
+
+if (timelineTrack) {
+  timelineTrack.addEventListener('mousedown', handleTimelineMouseDown);
+  window.addEventListener('mousemove', (e) => {
+    if (isDragging) updateTimelineFromMouse(e.clientX);
+  });
+  window.addEventListener('mouseup', stopTimelineDrag);
+  // Touch support
+  timelineTrack.addEventListener('touchstart', (e) => handleTimelineMouseDown(e.touches[0]));
+  window.addEventListener('touchmove', (e) => {
+    if (isDragging && e.touches[0]) updateTimelineFromMouse(e.touches[0].clientX);
+  });
+  window.addEventListener('touchend', stopTimelineDrag);
 }
 
 function parseTimeToSeconds(timeStr) {
@@ -260,6 +363,8 @@ btnClip.addEventListener('click', async () => {
         auto_broll:        $('broll-toggle') ? $('broll-toggle').checked : false,
         video_format:      videoFormat    ? videoFormat.value      : 'original',
         cookies:           $('manual-cookies') ? $('manual-cookies').value : '',
+        transcription_source: subtitleSource ? subtitleSource.value : 'auto',
+        whisper_model:     whisperModel     ? whisperModel.value     : 'base',
         // Preset style params
         sub_primary_color: subPrimaryColor ? subPrimaryColor.value : 'FFFFFF',
         sub_outline_color: subOutlineColor ? subOutlineColor.value : '000000',
@@ -288,6 +393,39 @@ btnClip.addEventListener('click', async () => {
     showTimelineProgress(false);
   }
 });
+
+// ── Preview Button Click ─────────────────────────────────────────────────
+const btnPreview = $('btn-preview');
+if (btnPreview) {
+  btnPreview.addEventListener('click', () => {
+    const start = startInput.value.trim();
+    const end = endInput.value.trim();
+    if (!start || !end) {
+      alert('Isi waktu mulai dan selesai terlebih dahulu.');
+      return;
+    }
+    const startSec = parseTimeToSeconds(start);
+    const endSec = parseTimeToSeconds(end);
+
+    // If a video is already loaded in the workspace player, seek & play segment
+    if (workspaceVideoPlayer && workspaceVideoPlayer.src) {
+      workspaceVideoPlayer.currentTime = startSec;
+      workspaceVideoPlayer.play();
+      showWorkspacePlayer(workspaceVideoPlayer.src);
+      const stopAt = () => {
+        if (workspaceVideoPlayer.currentTime >= endSec) {
+          workspaceVideoPlayer.pause();
+          workspaceVideoPlayer.removeEventListener('timeupdate', stopAt);
+        }
+      };
+      workspaceVideoPlayer.addEventListener('timeupdate', stopAt);
+      return;
+    }
+
+    // No video loaded yet: inform user
+    alert('Preview langsung tersedia setelah video di-cache atau setelah klip pertama selesai. Anda tetap bisa mengatur start/end di timeline.');
+  });
+}
 
 // ── Server-Sent Events ───────────────────────────────────────────────────
 function startSSE(taskId) {
@@ -323,6 +461,7 @@ function handleUpdate(data) {
   // Status label
   const statusMap = {
     pending:    '⏳ Menunggu...',
+    queued:     '⏳ Antrian...',
     downloading:'⬇️  Mengunduh video...',
     subtitles:  '💬 Memproses subtitle...',
     tracking:   '🎯 Melacak wajah pembicara...',
@@ -331,6 +470,8 @@ function handleUpdate(data) {
     processing: '⚙️  Memproses video...',
     done:       '✅ Selesai!',
     error:      '❌ Error',
+    cancelling: '⏹️ Membatalkan...',
+    cancelled:  '⏹️ Dibatalkan',
   };
   statusLabel.textContent = statusMap[data.status] || data.status;
   if (statusLabelPanel) statusLabelPanel.textContent = statusMap[data.status] || data.status;
@@ -366,11 +507,11 @@ function handleUpdate(data) {
     }
   }
 
-  // Error
-  if (data.status === 'error') {
+  // Error or cancelled
+  if (data.status === 'error' || data.status === 'cancelled') {
     evtSource.close();
     setLoading(false);
-    showError(data.error || 'Terjadi kesalahan.');
+    showError(data.status === 'cancelled' ? 'Proses dibatalkan.' : (data.error || 'Terjadi kesalahan.'));
     showTimelineProgress(false);
     // Go back to info or empty
     if (cachedVideoInfo) {
@@ -525,6 +666,7 @@ function updateWorkspaceProgress(pct, statusText, status) {
   if (substatusEl) {
     const hints = {
       pending: 'Menyiapkan...',
+      queued: 'Menunggu worker tersedia...',
       downloading: 'Mengunduh dari server...',
       subtitles: 'Mengekstrak dan memproses subtitle...',
       tracking: 'Mendeteksi wajah dan melacak posisi...',
@@ -533,6 +675,8 @@ function updateWorkspaceProgress(pct, statusText, status) {
       processing: 'Rendering video output...',
       done: 'Proses selesai!',
       error: 'Terjadi kesalahan.',
+      cancelling: 'Membatalkan proses...',
+      cancelled: 'Proses dibatalkan.',
     };
     substatusEl.textContent = hints[status] || 'Mohon tunggu...';
   }
@@ -666,6 +810,11 @@ async function triggerVideoInfoFetch(url) {
     
     data._url = url; // Cache the URL
     showWorkspaceInfo(data);
+    
+    // Set timeline duration from video metadata
+    if (data.duration) {
+      setTimelineDuration(data.duration);
+    }
     
     // Also update timeline with duration info
     if (timelineInfo) {
@@ -905,7 +1054,8 @@ btnGenerateAi.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan');
 
-    aiResult.value = data.copy;
+    const formatted = formatCopyResponse(data, language);
+    aiResult.value = formatted;
     aiResultWrap.style.display = 'block';
     btnCopyAi.style.display = 'inline-block';
   } catch (err) {
@@ -1364,6 +1514,8 @@ if (btnClipMoments) {
           hook_fontsize:     hookFontsize,
           hook_preset:       hookStyle,
           hook_position:     $('ctrl-hook-position')   ? $('ctrl-hook-position').value   : 'top',
+          transcription_source: ctrlSubtitleSource ? ctrlSubtitleSource.value : 'auto',
+          whisper_model:     ctrlWhisperModel ? ctrlWhisperModel.value : 'base',
         }),
       });
       const data = await res.json();
@@ -1647,7 +1799,7 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Terjadi kesalahan saat meng-generate copy.');
 
-    parseAndRenderCopy(data.copy, data.language);
+    parseAndRenderCopy(data);
     
     modalAiSpinner.style.display = 'none';
     modalAiResult.style.display = 'block';
@@ -1658,18 +1810,17 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
   }
 }
 
-function parseAndRenderCopy(markdownText, language) {
-  const lang = language || (modalAiLanguage ? modalAiLanguage.value : (aiLanguage ? aiLanguage.value : 'id'));
-  // Parse AI response using emoji section delimiters (works for both id and en)
-  const titleMatch = markdownText.match(/🌟\s*(?:JUDUL VIDEO|VIDEO TITLE|Title|Judul).*?\n([^]*?)(?=\n📝|\n🔥|\n🏷️|$)/i);
-  const captionMatch = markdownText.match(/📝\s*CAPTION.*?\n([^]*?)(?=\n🔥|\n🏷️|$)/i);
-  const ctaMatch = markdownText.match(/🔥\s*(?:CALL TO ACTION|CTA).*?\n([^]*?)(?=\n🏷️|$)/i);
-  const tagsMatch = markdownText.match(/🏷️\s*(?:HASHTAGS|HASHTAG).*?\n([^]*?)$/i);
+function parseAndRenderCopy(data) {
+  const language = data.language || (modalAiLanguage ? modalAiLanguage.value : (aiLanguage ? aiLanguage.value : 'id'));
+  const title = data.title_hook || data.title || '';
+  const caption = data.caption || '';
+  const cta = data.cta || '';
+  const hashtags = data.hashtags || '';
 
-  modalTitleHooks.textContent = titleMatch ? titleMatch[1].trim() : '-';
-  modalCaption.textContent = captionMatch ? captionMatch[1].trim() : '-';
-  modalCta.textContent = ctaMatch ? ctaMatch[1].trim() : '-';
-  modalHashtags.textContent = tagsMatch ? tagsMatch[1].trim() : '-';
+  modalTitleHooks.textContent = title || '-';
+  modalCaption.textContent = caption || '-';
+  modalCta.textContent = cta || '-';
+  modalHashtags.textContent = hashtags || '-';
 }
 
 if (modalBtnCopyAll) {
@@ -1698,6 +1849,19 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+
+function formatCopyResponse(data, language) {
+  const labels = AI_LABELS[language] || AI_LABELS.id;
+  const t = language === 'en'
+    ? { title: 'VIDEO TITLE', caption: 'CAPTION', cta: 'CALL TO ACTION', hashtags: 'HASHTAGS' }
+    : { title: 'JUDUL VIDEO', caption: 'CAPTION', cta: 'CALL TO ACTION (CTA)', hashtags: 'HASHTAGS' };
+  const title = data.title_hook || data.title || '-';
+  const caption = data.caption || '-';
+  const cta = data.cta || '-';
+  const hashtags = data.hashtags || '-';
+  return `🌟 **${t.title}**\n${title}\n\n📝 **${t.caption}**\n${caption}\n\n🔥 **${t.cta}**\n${cta}\n\n🏷️ **${t.hashtags}**\n${hashtags}`;
 }
 
 
