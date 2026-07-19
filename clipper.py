@@ -53,6 +53,24 @@ def _seconds_to_ffmpeg(ts: str) -> str:
     return ts
 
 
+def _build_ytdlp_formats(download_resolution: str) -> tuple[str, str]:
+    """
+    Build yt-dlp format strings for a requested max resolution.
+    Returns (primary_format, fallback_format).
+    """
+    valid = {"2160", "1440", "1080", "720", "480"}
+    if download_resolution == "best" or download_resolution not in valid:
+        return (
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "best[ext=mp4]/best",
+        )
+    h = download_resolution
+    return (
+        f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/best[height<={h}][ext=mp4]/best[height<={h}]",
+        f"best[height<={h}][ext=mp4]/best[height<={h}]",
+    )
+
+
 def _parse_seconds(ts: str) -> float:
     """Convert HH:MM:SS or MM:SS or raw seconds string to float seconds."""
     ts = ts.strip()
@@ -563,6 +581,68 @@ def _rgb_to_ass(rgb_hex: str, alpha_hex: str = "00") -> str:
     return f"&H{alpha_hex}{b}{g}{r}&"
 
 
+def _get_quality_profile(output_quality: str) -> dict:
+    """Return FFmpeg quality profile mapping."""
+    profiles = {
+        "high": {"crf": "18", "preset": "medium", "audio_bitrate": "256k"},
+        "standard": {"crf": "22", "preset": "fast", "audio_bitrate": "192k"},
+        "draft": {"crf": "28", "preset": "veryfast", "audio_bitrate": "128k"},
+    }
+    return profiles.get(output_quality, profiles["standard"])
+
+
+def _vertical_target_height(output_resolution: str, vid_h: int) -> int:
+    """Return target height for 9:16 output, never upscaling beyond source."""
+    targets = {"1080": 1920, "720": 1280, "480": 854}
+    if output_resolution == "source":
+        return vid_h
+    return min(vid_h, targets.get(output_resolution, 1920))
+
+
+def _build_scale_filter(
+    video_format: str,
+    output_resolution: str,
+    vid_w: int,
+    vid_h: int,
+) -> str:
+    """
+    Build a source-aware scale filter.
+
+    Rules:
+      - Never upscale: target dimensions are clamped to the source dimensions.
+      - For 9:16 vertical formats, the target is the output height.
+      - For other formats, the target is the output width.
+      - output_resolution == "source" preserves the original resolution.
+    """
+    # Map output resolution labels to pixel targets (height for vertical, width for others)
+    vertical_targets = {"1080": 1920, "720": 1280, "480": 854}
+    landscape_targets = {"1080": 1920, "720": 1280, "480": 854}
+
+    is_vertical = video_format in (
+        "vertical-crop", "vertical-pad", "vertical-blur",
+        "vertical-speaker", "vertical-speaker-blur",
+    )
+
+    if is_vertical:
+        target_h = vertical_targets.get(output_resolution, vid_h)
+        # Clamp to source height so we never upscale
+        safe_h = min(vid_h, target_h)
+        if safe_h <= 0:
+            safe_h = target_h if target_h > 0 else vid_h
+        # For exact resolution, use force_original_aspect_ratio=disable;
+        # for source-aware we keep aspect ratio and let crop/pad handle the rest.
+        if output_resolution == "source":
+            return f"scale=-2:{safe_h}:force_original_aspect_ratio=disable"
+        return f"scale=1080:{safe_h}:force_original_aspect_ratio=disable"
+
+    # Landscape / original
+    target_w = landscape_targets.get(output_resolution, vid_w)
+    safe_w = min(vid_w, target_w)
+    if safe_w <= 0:
+        safe_w = target_w if target_w > 0 else vid_w
+    return f"scale={safe_w}:-2:force_original_aspect_ratio=disable"
+
+
 def run_clip(
     task_id: str,
     url: str,
@@ -597,12 +677,21 @@ def run_clip(
     auto_broll: bool = False,
     transcription_source: str = "auto",
     whisper_model: str = "base",
+    download_resolution: str = "best",
+    output_resolution: str = "1080",
+    output_quality: str = "standard",
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
     Runs in a background thread.
     """
     os.makedirs(output_dir, exist_ok=True)
+
+    _append_log(
+        task_id,
+        f"[CONFIG] Resolusi unduhan: {download_resolution}, "
+        f"resolusi output: {output_resolution}, kualitas: {output_quality}",
+    )
 
     output_filename  = f"clip_{task_id}.mp4"
     output_path      = os.path.join(output_dir, output_filename)
@@ -670,16 +759,19 @@ def run_clip(
             else:
                 _append_log(task_id, "[>>] Memulai unduhan video...")
 
+                primary_fmt, fallback_fmt = _build_ytdlp_formats(download_resolution)
+                _append_log(task_id, f"[>>] Format unduhan: {primary_fmt}")
+
                 download_attempts = [
                     (
                         "format utama (kualitas tinggi)",
                         [],
-                        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                        primary_fmt,
                     ),
                     (
-                        "fallback web (kombinasi 360p)",
+                        "fallback web",
                         ["--extractor-args", "youtube:player_client=web"],
-                        "best[ext=mp4]/best",
+                        fallback_fmt,
                     ),
                 ]
 
@@ -949,6 +1041,7 @@ def run_clip(
 
         # ── Step 2b: Speaker Tracking (if vertical-speaker or vertical-speaker-blur) ─
         speaker_crop_filter = None
+        vid_w, vid_h = 0, 0
         if video_format in ("vertical-speaker", "vertical-speaker-blur"):
             _update_task(task_id, status="tracking", progress=55)
             _append_log(task_id, "[TRACK] 🎯 Memulai analisis wajah untuk Speaker Tracking...")
@@ -1026,6 +1119,17 @@ def run_clip(
                     task_id,
                     "[TRACK] ⚠️ Gagal memotong segmen untuk analisis — menggunakan center crop.",
                 )
+
+        # Ensure we have video dimensions for source-aware scaling
+        if not (vid_w and vid_h) and downloaded_file and os.path.isfile(downloaded_file):
+            try:
+                vid_w, vid_h, _ = face_tracker.get_video_dimensions(downloaded_file)
+                _append_log(task_id, f"[DIMENSI] Sumber: {vid_w}x{vid_h}")
+            except Exception as e:
+                _append_log(task_id, f"[DIMENSI] Gagal membaca dimensi: {e}")
+                vid_w, vid_h = 0, 0
+        if not (vid_w and vid_h):
+            vid_w, vid_h = 1920, 1080
 
         broll_events = []
         if auto_broll and has_sub_file and subtitle_type == "burn":
@@ -1143,64 +1247,69 @@ def run_clip(
                 ffmpeg_cmd.extend(["-map", "1:s:0"])  # Map subtitle from second input
 
             vf_filters = []
+            target_h = _vertical_target_height(output_resolution, vid_h)
+            target_h_fg = max(int(target_h * 0.9), 360)  # foreground ~90% height for blur edge effect
+            _append_log(task_id, f"[FORMAT] Target vertical height: {target_h}px (source height: {vid_h}px)")
             if video_format == "vertical-crop":
                 vf_filters.append("crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'")
-                vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                vf_filters.append(f"scale=-2:{target_h}:force_original_aspect_ratio=disable")
                 vf_filters.append("setsar=1")
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Crop Center)")
             elif video_format == "vertical-pad":
                 vf_filters.append("pad='max(iw,ih*9/16)':'max(ih,iw*16/9)':(ow-iw)/2:(oh-ih)/2:black")
-                vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                vf_filters.append(f"scale=-2:{target_h}:force_original_aspect_ratio=disable")
                 vf_filters.append("setsar=1")
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Pad Black Bars)")
             elif video_format == "vertical-blur":
-                # Background: center 9:16 crop blurred and scaled to 1080x1920.
+                # Background: center 9:16 crop blurred and scaled to target height.
                 # Foreground: same center crop scaled slightly smaller so blur edges show.
                 vf_filters.append(
-                    "split=2[bg][fg];"
-                    "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
-                    "[fg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=960:-2[fg_scaled];"
-                    "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
+                    f"split=2[bg][fg];"
+                    f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=-2:{target_h}:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
+                    f"[fg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=-2:{target_h_fg}[fg_scaled];"
+                    f"[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
                 )
                 _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background)")
             elif video_format == "vertical-speaker":
                 if speaker_crop_filter:
                     vf_filters.append(speaker_crop_filter)
-                    # Scale to standard 1080x1920 to ensure social media compatibility
-                    # (Facebook, TikTok, IG require standard resolutions)
-                    vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                    # Scale to target height (source-aware)
+                    vf_filters.append(f"scale=-2:{target_h}:force_original_aspect_ratio=disable")
                     vf_filters.append("setsar=1")
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (🎯 Speaker Tracking)")
                 else:
                     # Fallback to center crop when tracking failed
                     vf_filters.append("crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'")
-                    vf_filters.append("scale=1080:1920:force_original_aspect_ratio=disable")
+                    vf_filters.append(f"scale=-2:{target_h}:force_original_aspect_ratio=disable")
                     vf_filters.append("setsar=1")
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Center Crop — fallback)")
             elif video_format == "vertical-speaker-blur":
+                target_h_fg = max(int(target_h * 0.9), 360)
                 # Speaker Tracking + Blur Background
                 # The speaker_crop_filter contains the dynamic crop expression from face tracking.
-                # We need to: 1) create blurred BG from center-crop, 2) overlay face-tracked foreground.
+                # We use it as the foreground, and a blurred center crop as background.
+                # This is a complex filter, so we build a filter_complex-compatible string.
                 if speaker_crop_filter:
-                    # speaker_crop_filter is like: crop=W:H:x_expr:0
-                    # We use it as the foreground, and a blurred center crop as background.
-                    # This is a complex filter, so we build a filter_complex-compatible string.
                     vf_filters.append(
                         f"split=2[bg][fg];"
-                        f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
-                        f"[fg]{speaker_crop_filter},scale=960:-2[fg_tracked];"
+                        f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=-2:{target_h}:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
+                        f"[fg]{speaker_crop_filter},scale=-2:{target_h_fg}[fg_tracked];"
                         f"[bg_blur][fg_tracked]overlay=(W-w)/2:(H-h)/2"
                     )
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (🎯 Speaker Tracking + Blur Background)")
                 else:
                     # Fallback to standard blur background (center crop) when tracking failed
                     vf_filters.append(
-                        "split=2[bg][fg];"
-                        "[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
-                        "[fg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=960:-2[fg_scaled];"
-                        "[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
+                        f"split=2[bg][fg];"
+                        f"[bg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=-2:{target_h}:force_original_aspect_ratio=disable,boxblur=20:5[bg_blur];"
+                        f"[fg]crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=-2:{target_h_fg}[fg_scaled];"
+                        f"[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2"
                     )
                     _append_log(task_id, "[FORMAT] Mengubah ke 9:16 (Blur Background — fallback)")
+            elif video_format == "original" and output_resolution != "source":
+                # Optional downscale for original format
+                vf_filters.append(_build_scale_filter(video_format, output_resolution, vid_w, vid_h))
+                _append_log(task_id, f"[FORMAT] Original format dengan batas resolusi {output_resolution}")
 
             if has_sub_file and subtitle_type == "burn":
                 # Build safe path for FFmpeg subtitles filter on Windows
@@ -1392,11 +1501,18 @@ def run_clip(
             # Always map both video and audio streams
             ffmpeg_cmd.extend(["-map", map_v, "-map", map_a])
 
+            quality_profile = _get_quality_profile(output_quality)
+            _append_log(
+                task_id,
+                f"[QUALITY] Profil: {output_quality} — CRF {quality_profile['crf']}, "
+                f"preset {quality_profile['preset']}, audio {quality_profile['audio_bitrate']}"
+            )
+
             ffmpeg_cmd.extend([
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+                "-c:v", "libx264", "-preset", quality_profile["preset"], "-crf", quality_profile["crf"],
                 "-pix_fmt", "yuv420p",          # Force 8-bit 4:2:0 — browser-compatible
                 "-profile:v", "high", "-level", "4.0",  # Max browser compat H.264 profile
-                "-c:a", "aac", "-b:a", "192k",  # Re-encode audio to AAC (avoids Opus/Vorbis in MP4)
+                "-c:a", "aac", "-b:a", quality_profile["audio_bitrate"],  # Re-encode audio to AAC
                 "-movflags", "+faststart",      # Web-friendly: moov atom at start of file
                 "-shortest",                    # End at shortest stream to avoid empty frames
             ])
@@ -1519,6 +1635,9 @@ def start_clip_thread(
     auto_broll: bool = False,
     transcription_source: str = "auto",
     whisper_model: str = "base",
+    download_resolution: str = "best",
+    output_resolution: str = "1080",
+    output_quality: str = "standard",
 ):
     """
     Menjalankan proses pemotongan di thread terpisah.
@@ -1554,6 +1673,9 @@ def start_clip_thread(
         "auto_broll": auto_broll,
         "transcription_source": transcription_source,
         "whisper_model": whisper_model,
+        "download_resolution": download_resolution,
+        "output_resolution": output_resolution,
+        "output_quality": output_quality,
     }
     q_module.submit_task(task_id, url, start, end, output_dir, kwargs)
     return None

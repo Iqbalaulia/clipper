@@ -26,6 +26,9 @@ const subBold         = $('sub-bold');
 const subItalic       = $('sub-italic');
 const subUnderline    = $('sub-underline');
 const videoFormat     = $('video-format');
+const downloadResolution = $('download-resolution');
+const outputResolution   = $('output-resolution');
+const outputQuality      = $('output-quality');
 const urlInput        = $('url-input');
 const startInput      = $('start-input');
 const endInput        = $('end-input');
@@ -362,6 +365,9 @@ btnClip.addEventListener('click', async () => {
         bgm_type:          $('bgm-type')  ? $('bgm-type').value    : 'none',
         auto_broll:        $('broll-toggle') ? $('broll-toggle').checked : false,
         video_format:      videoFormat    ? videoFormat.value      : 'original',
+        download_resolution: downloadResolution ? downloadResolution.value : 'best',
+        output_resolution:   outputResolution   ? outputResolution.value   : '1080',
+        output_quality:      outputQuality      ? outputQuality.value      : 'standard',
         cookies:           $('manual-cookies') ? $('manual-cookies').value : '',
         transcription_source: subtitleSource ? subtitleSource.value : 'auto',
         whisper_model:     whisperModel     ? whisperModel.value     : 'base',
@@ -1246,6 +1252,9 @@ const ctrlUrlInput         = $('ctrl-url');
 const ctrlNumMoments       = $('ctrl-num-moments');
 const ctrlApiKey           = $('ctrl-api-key');
 const ctrlVideoFormat      = $('ctrl-video-format');
+const ctrlDownloadResolution = $('ctrl-download-resolution');
+const ctrlOutputResolution   = $('ctrl-output-resolution');
+const ctrlOutputQuality      = $('ctrl-output-quality');
 const ctrlCookiesToggle    = $('ctrl-cookies-toggle');
 const ctrlSubtitleToggle   = $('ctrl-subtitle-toggle');
 const btnScan              = $('btn-scan');
@@ -1490,6 +1499,9 @@ if (btnClipMoments) {
           url:              ctrlVideoUrl,
           moments:          chosenMoments,
           video_format:     videoFormat,
+          download_resolution: ctrlDownloadResolution ? ctrlDownloadResolution.value : 'best',
+          output_resolution:   ctrlOutputResolution   ? ctrlOutputResolution.value   : '1080',
+          output_quality:      ctrlOutputQuality      ? ctrlOutputQuality.value      : 'standard',
           cookies:          cookies,
           subtitle_enabled:  subtitleEnabled,
           subtitle_lang:     $('ctrl-subtitle-lang') ? $('ctrl-subtitle-lang').value : 'id,en',

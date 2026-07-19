@@ -64,5 +64,31 @@ def test_parse_seconds_helpers():
     assert clipper._parse_seconds("00:01:30") == 90.0
 
 
+def test_ytdlp_format_builder():
+    primary, fallback = clipper._build_ytdlp_formats("best")
+    assert "bestvideo" in primary
+    primary, fallback = clipper._build_ytdlp_formats("1080")
+    assert "height<=1080" in primary
+    assert "height<=1080" in fallback
+
+
+def test_quality_profile():
+    high = clipper._get_quality_profile("high")
+    assert high["crf"] == "18"
+    assert high["preset"] == "medium"
+    standard = clipper._get_quality_profile("standard")
+    assert standard["crf"] == "22"
+    assert standard["preset"] == "fast"
+
+
+def test_vertical_target_height():
+    assert clipper._vertical_target_height("source", 1080) == 1080
+    assert clipper._vertical_target_height("1080", 2160) == 1920
+    assert clipper._vertical_target_height("1080", 1080) == 1080  # source height is 1080, no upscale
+    assert clipper._vertical_target_height("1080", 720) == 720
+    assert clipper._vertical_target_height("720", 2160) == 1280
+    assert clipper._vertical_target_height("720", 720) == 720
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -284,6 +284,47 @@
                 </label>
               </div>
 
+              <!-- Resolution & Quality -->
+              <div class="controversial-options-row">
+                <div class="field" style="flex:1; min-width:120px;">
+                  <label for="ctrl-download-resolution">Resolusi Unduhan</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">⬇️</span>
+                    <select id="ctrl-download-resolution">
+                      <option value="best" selected>Best / Original</option>
+                      <option value="2160">4K (2160p)</option>
+                      <option value="1440">2K (1440p)</option>
+                      <option value="1080">Full HD (1080p)</option>
+                      <option value="720">HD (720p)</option>
+                      <option value="480">SD (480p)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field" style="flex:1; min-width:120px;">
+                  <label for="ctrl-output-resolution">Resolusi Output</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">🖼️</span>
+                    <select id="ctrl-output-resolution">
+                      <option value="source">Ikuti Sumber</option>
+                      <option value="1080" selected>Maks 1080p</option>
+                      <option value="720">Maks 720p</option>
+                      <option value="480">Maks 480p</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field" style="flex:1; min-width:120px;">
+                  <label for="ctrl-output-quality">Kualitas Output</label>
+                  <div class="input-wrap select-wrap">
+                    <span class="input-icon">⚙️</span>
+                    <select id="ctrl-output-quality">
+                      <option value="high">Tinggi (CRF 18)</option>
+                      <option value="standard" selected>Standar (CRF 22)</option>
+                      <option value="draft">Draft (CRF 28)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div class="controversial-options-row">
                 <div class="field" style="flex:1; min-width:120px;">
                   <label for="ctrl-subtitle-lang">Bahasa Subtitle</label>
@@ -466,6 +507,52 @@
                     </select>
                   </div>
                   <span class="field-hint">Crop Tengah akan memotong sisi kiri-kanan video horizontal.</span>
+                </div>
+
+                <!-- Resolution & Quality -->
+                <div class="field">
+                  <div class="resolution-quality-row">
+                    <div class="rq-field">
+                      <label for="download-resolution">Resolusi Unduhan</label>
+                      <div class="input-wrap select-wrap">
+                        <span class="input-icon">⬇️</span>
+                        <select id="download-resolution">
+                          <option value="best" selected>Best / Original</option>
+                          <option value="2160">4K (2160p)</option>
+                          <option value="1440">2K (1440p)</option>
+                          <option value="1080">Full HD (1080p)</option>
+                          <option value="720">HD (720p)</option>
+                          <option value="480">SD (480p)</option>
+                        </select>
+                      </div>
+                      <span class="field-hint">Kualitas sumber video yang diunduh.</span>
+                    </div>
+                    <div class="rq-field">
+                      <label for="output-resolution">Resolusi Output</label>
+                      <div class="input-wrap select-wrap">
+                        <span class="input-icon">🖼️</span>
+                        <select id="output-resolution">
+                          <option value="source">Ikuti Sumber</option>
+                          <option value="1080" selected>Maks 1080p</option>
+                          <option value="720">Maks 720p</option>
+                          <option value="480">Maks 480p</option>
+                        </select>
+                      </div>
+                      <span class="field-hint">Batasi resolusi output. Source = tidak di-downscale.</span>
+                    </div>
+                    <div class="rq-field">
+                      <label for="output-quality">Kualitas Output</label>
+                      <div class="input-wrap select-wrap">
+                        <span class="input-icon">⚙️</span>
+                        <select id="output-quality">
+                          <option value="high">Tinggi (CRF 18)</option>
+                          <option value="standard" selected>Standar (CRF 22)</option>
+                          <option value="draft">Draft (CRF 28)</option>
+                        </select>
+                      </div>
+                      <span class="field-hint">Trade-off kualitas vs ukuran & kecepatan.</span>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Background Music -->

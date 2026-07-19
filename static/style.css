@@ -1836,6 +1836,27 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   align-items: flex-end;
 }
 
+.resolution-quality-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.resolution-quality-row .rq-field {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.resolution-quality-row .rq-field label {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 /* ── Scan Status ─────────────────────────────────────────── */
 .scan-status {
   margin-top: 10px;

@@ -334,6 +334,28 @@ Modal detail muncul saat user mengklik tombol **Detail** pada hasil batch clip. 
 
 ---
 
+## Resolution & Quality Controls
+
+**Deskripsi:**  
+Kontrol resolusi unduhan, resolusi output, dan profil kualitas encoding agar clip tetap tajam dan tidak pecah. Sistem secara otomatis menghindari upscale dan menurunkan resolusi hanya jika user meminta batasan tertentu.
+
+**Cara Pakai:**
+1. Di tab **Manual Clip** atau **Auto-Clip AI**, atur tiga opsi baru:
+   - **Resolusi Unduhan**: `best`, `4K`, `2K`, `1080p`, `720p`, `480p`.
+   - **Resolusi Output**: `Ikuti Sumber` (tidak downscale), `Maks 1080p`, `Maks 720p`, `Maks 480p`.
+   - **Kualitas Output**: `Tinggi (CRF 18)`, `Standar (CRF 22)`, `Draft (CRF 28)`.
+2. Klik **Generate Clip** / **Potong Momen Terpilih**.
+3. Di log progress akan terlihat target resolusi, profil kualitas, dan perubahan format scaling.
+
+**Teknologi:**
+- Format string yt-dlp dinamis berdasarkan resolusi unduhan.
+- Source-aware scaling: `scale=-2:min(ih, target_h)` untuk vertical 9:16 agar tidak upscale.
+- CRF & FFmpeg preset mapping: `high` = CRF 18 + preset medium; `standard` = CRF 22 + preset fast; `draft` = CRF 28 + preset veryfast.
+
+**File terkait:** `clipper.py`, `app.py`, `static/app.js`, `templates/index.html`, `static/style.css`
+
+---
+
 ## Ringkasan File Utama per Fitur
 
 | Fitur | File Utama | Catatan |
@@ -353,6 +375,7 @@ Modal detail muncul saat user mengklik tombol **Detail** pada hasil batch clip. 
 | Cookies Bypass | `app.py`, `static/app.js` | `/upload-cookies` |
 | SSE Progress | `app.py`, `static/app.js` | `/progress/<task_id>` |
 | Format Output | `clipper.py` | 6 format |
+| Resolution & Quality | `clipper.py`, `app.py`, `static/app.js` | Download, output, CRF |
 
 ---
 

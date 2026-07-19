@@ -225,6 +225,20 @@ def clip():
     transcription_source = (data.get("transcription_source") or "auto").strip()
     whisper_model     = (data.get("whisper_model") or "base").strip()
     
+    # Resolution & quality options
+    _valid_download_res = {"best", "2160", "1440", "1080", "720", "480"}
+    _valid_output_res   = {"source", "1080", "720", "480"}
+    _valid_quality      = {"high", "standard", "draft"}
+    download_resolution = str(data.get("download_resolution") or "best").strip().lower()
+    output_resolution   = str(data.get("output_resolution") or "1080").strip().lower()
+    output_quality      = str(data.get("output_quality") or "standard").strip().lower()
+    if download_resolution not in _valid_download_res:
+        download_resolution = "best"
+    if output_resolution not in _valid_output_res:
+        output_resolution = "source"
+    if output_quality not in _valid_quality:
+        output_quality = "standard"
+    
     cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
 
     # Disk space check (rough estimate: 500 MB minimum)
@@ -261,6 +275,9 @@ def clip():
         "auto_broll": auto_broll,
         "transcription_source": transcription_source,
         "whisper_model": whisper_model,
+        "download_resolution": download_resolution,
+        "output_resolution": output_resolution,
+        "output_quality": output_quality,
     }
     task_queue.submit_task(task_id=task_id, url=url, start=start, end=end, output_dir=OUTPUT_DIR, kwargs=kwargs)
 
@@ -965,6 +982,20 @@ def clip_moments():
     transcription_source = (data.get("transcription_source") or "auto").strip()
     whisper_model     = (data.get("whisper_model") or "base").strip()
 
+    # Resolution & quality options
+    _valid_download_res = {"best", "2160", "1440", "1080", "720", "480"}
+    _valid_output_res   = {"source", "1080", "720", "480"}
+    _valid_quality      = {"high", "standard", "draft"}
+    download_resolution = str(data.get("download_resolution") or "best").strip().lower()
+    output_resolution   = str(data.get("output_resolution") or "1080").strip().lower()
+    output_quality      = str(data.get("output_quality") or "standard").strip().lower()
+    if download_resolution not in _valid_download_res:
+        download_resolution = "best"
+    if output_resolution not in _valid_output_res:
+        output_resolution = "source"
+    if output_quality not in _valid_quality:
+        output_quality = "standard"
+
     task_list = []
     for moment in moments:
         start = str(moment.get("start", "00:00:00"))
@@ -1001,6 +1032,9 @@ def clip_moments():
             "auto_broll": auto_broll,
             "transcription_source": transcription_source,
             "whisper_model": whisper_model,
+            "download_resolution": download_resolution,
+            "output_resolution": output_resolution,
+            "output_quality": output_quality,
         }
         task_queue.submit_task(task_id, url, start, end, OUTPUT_DIR, kwargs)
         task_list.append({
