@@ -619,7 +619,7 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
 .ws-gallery {
   padding: 24px;
   overflow-y: auto;
-  align-items: stretch !important;
+  align-items: center !important;
   justify-content: flex-start !important;
   background: var(--rb-white);
 }
@@ -647,8 +647,10 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
-  flex: 1;
-  min-height: 0;
+  width: 100%;
+  max-width: 900px;
+  align-items: start;
+  grid-auto-rows: min-content;
 }
 
 .ws-gallery-card {
@@ -657,6 +659,8 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   border: 3px solid var(--rb-black);
   transition: var(--transition);
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
 }
 
 .ws-gallery-card:hover {
@@ -2177,8 +2181,10 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
 
 .batch-clips-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 10px;
+  align-items: start;
+  grid-auto-rows: min-content;
 }
 
 .batch-clip-card {
@@ -2187,6 +2193,8 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   overflow: hidden;
   animation: fadein .3s ease;
   transition: var(--transition);
+  display: flex;
+  flex-direction: column;
 }
 
 .batch-clip-card:hover {
@@ -2195,7 +2203,7 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
 
 .batch-clip-video {
   width: 100%;
-  height: 110px;
+  aspect-ratio: 16/9;
   object-fit: cover;
   display: block;
   background: #000;
