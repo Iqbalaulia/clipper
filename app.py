@@ -340,6 +340,29 @@ def download(filename: str):
     return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
 
 
+@app.route("/download-thumb/<path:filename>")
+def download_thumb(filename: str):
+    """Serve a generated thumbnail image for download."""
+    return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
+
+
+@app.route("/task-meta/<task_id>")
+def task_meta(task_id: str):
+    """Return extended metadata for a finished task (virality score + thumbnail)."""
+    task = clipper.get_task(task_id)
+    if task is None:
+        return jsonify({"error": "Task tidak ditemukan."}), 404
+    return jsonify({
+        "task_id": task["id"],
+        "status": task["status"],
+        "output_file": task["output_file"],
+        "virality_score": task.get("virality_score"),
+        "virality_reason": task.get("virality_reason"),
+        "thumbnail_file": task.get("thumbnail_file"),
+        "moment_index": task.get("moment_index", 0),
+    })
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _sse(data: dict) -> str:
@@ -997,10 +1020,11 @@ def clip_moments():
         output_quality = "standard"
 
     task_list = []
-    for moment in moments:
+    for idx, moment in enumerate(moments, start=1):
         start = str(moment.get("start", "00:00:00"))
         end   = str(moment.get("end",   "00:01:00"))
         title = str(moment.get("title", ""))
+        moment_index = int(moment.get("index", idx))
         
         task_id = str(uuid.uuid4())
         kwargs = {
@@ -1035,6 +1059,7 @@ def clip_moments():
             "download_resolution": download_resolution,
             "output_resolution": output_resolution,
             "output_quality": output_quality,
+            "moment_index": moment_index,
         }
         task_queue.submit_task(task_id, url, start, end, OUTPUT_DIR, kwargs)
         task_list.append({
@@ -1061,6 +1086,10 @@ def batch_progress():
                 "progress": t["progress"],
                 "file": t["output_file"],
                 "error": t["error"],
+                "virality_score": t.get("virality_score"),
+                "virality_reason": t.get("virality_reason"),
+                "thumbnail_file": t.get("thumbnail_file"),
+                "moment_index": t.get("moment_index", 0),
             }
     return jsonify({"tasks": result})
 

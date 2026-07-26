@@ -507,6 +507,31 @@ function handleUpdate(data) {
     showDownload(data.file);
     showTimelineProgress(false);
 
+    // Fetch extended metadata (virality score + thumbnail) for single clip
+    if (currentTaskId) {
+      fetch(`/task-meta/${currentTaskId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(meta => {
+          if (!meta) return;
+          const metaWrap = $('single-clip-meta');
+          const scoreEl = $('single-clip-score');
+          const reasonEl = $('single-clip-reason');
+          const thumbEl = $('single-clip-thumb');
+          if (meta.virality_score != null && metaWrap && scoreEl) {
+            metaWrap.style.display = 'block';
+            const scoreClass = meta.virality_score >= 75 ? 'high' : meta.virality_score >= 50 ? 'medium' : 'low';
+            scoreEl.className = `modal-meta-score ${scoreClass}`;
+            scoreEl.textContent = meta.virality_score;
+          }
+          if (meta.virality_reason && reasonEl) reasonEl.textContent = meta.virality_reason;
+          if (meta.thumbnail_file && thumbEl) {
+            thumbEl.src = `/download-thumb/${meta.thumbnail_file}`;
+            thumbEl.style.display = 'block';
+          }
+        })
+        .catch(() => {});
+    }
+
     // Otomatis generate copy jika API key sudah ada
     if (geminiKeyInput && geminiKeyInput.value.trim() !== '') {
       btnGenerateAi.click();
@@ -716,25 +741,36 @@ function showWorkspaceGallery(tasks) {
   
   successTasks.forEach(t => {
     const fileUrl = `/download/${t.output_file}`;
+    const thumbUrl = t.thumbnail_file ? `/download-thumb/${t.thumbnail_file}` : '';
+    const score = t.virality_score != null ? t.virality_score : null;
+    const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low';
     const card = document.createElement('div');
     card.className = 'ws-gallery-card';
     card.innerHTML = `
-      <video src="${fileUrl}" preload="metadata" muted></video>
+      <div class="ws-gallery-thumb-wrap">
+        ${thumbUrl ? `<img class="ws-gallery-thumb" src="${thumbUrl}" alt="thumbnail" />` : `<video src="${fileUrl}" preload="metadata" muted></video>`}
+        ${score != null ? `<span class="ws-gallery-score ${scoreClass}">${score}</span>` : ''}
+      </div>
       <div class="ws-gallery-card-info">
         <p class="ws-gallery-card-title">${escHtml(t.title || `Momen ${t.moment_index}`)}</p>
         <p class="ws-gallery-card-time">⏱ ${t.start} → ${t.end}</p>
+        ${score != null ? `<p class="ws-gallery-score-reason" title="${escHtml(t.virality_reason || '')}">${escHtml(t.virality_reason || '')}</p>` : ''}
         <div class="ws-gallery-card-actions">
           <a href="${fileUrl}" download>⬇️ Download</a>
-          <button onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index})">✨ Detail</button>
+          ${thumbUrl ? `<a href="${thumbUrl}" download class="thumb-download">🖼️ Thumbnail</a>` : ''}
+          <button onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index}, '${t.task_id}')">✨ Detail</button>
         </div>
       </div>
     `;
     
     // Click video thumbnail to play in workspace player
-    card.querySelector('video').addEventListener('click', () => {
-      showWorkspacePlayer(fileUrl, t.output_file);
-      highlightTimeline(t.start, t.end);
-    });
+    const mediaEl = card.querySelector('video, img');
+    if (mediaEl) {
+      mediaEl.addEventListener('click', () => {
+        showWorkspacePlayer(fileUrl, t.output_file);
+        highlightTimeline(t.start, t.end);
+      });
+    }
     
     grid.appendChild(card);
   });
@@ -862,6 +898,19 @@ function handleNewClip() {
   if (workspaceVideoPlayer) {
     workspaceVideoPlayer.pause();
     workspaceVideoPlayer.removeAttribute('src');
+  }
+  
+  // Reset single clip metadata
+  const metaWrap = $('single-clip-meta');
+  const scoreEl = $('single-clip-score');
+  const reasonEl = $('single-clip-reason');
+  const thumbEl = $('single-clip-thumb');
+  if (metaWrap) metaWrap.style.display = 'none';
+  if (scoreEl) scoreEl.textContent = '0';
+  if (reasonEl) reasonEl.textContent = '';
+  if (thumbEl) {
+    thumbEl.src = '';
+    thumbEl.style.display = 'none';
   }
   
   resetEmptyState();
@@ -1627,6 +1676,10 @@ function startBatchPolling() {
         // Store file info back into task
         if (st.file) t.output_file = st.file;
         if (st.error) t.error_msg  = st.error;
+        if (st.virality_score !== undefined) t.virality_score = st.virality_score;
+        if (st.virality_reason !== undefined) t.virality_reason = st.virality_reason;
+        if (st.thumbnail_file !== undefined) t.thumbnail_file = st.thumbnail_file;
+        if (st.moment_index !== undefined) t.moment_index = st.moment_index;
       });
 
       // Update central workspace progress ring
@@ -1665,25 +1718,36 @@ function renderBatchGallery(tasks) {
 
   successTasks.forEach(t => {
     const fileUrl = `/download/${t.output_file}`;
+    const thumbUrl = t.thumbnail_file ? `/download-thumb/${t.thumbnail_file}` : '';
+    const score = t.virality_score != null ? t.virality_score : null;
+    const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low';
     const card = document.createElement('div');
     card.className = 'batch-clip-card';
     card.innerHTML = `
-      <video class="batch-clip-video" src="${fileUrl}" preload="metadata" muted></video>
+      <div class="batch-clip-thumb-wrap">
+        ${thumbUrl ? `<img class="batch-clip-thumb" src="${thumbUrl}" alt="thumbnail" />` : `<video class="batch-clip-video" src="${fileUrl}" preload="metadata" muted></video>`}
+        ${score != null ? `<span class="batch-clip-score ${scoreClass}">${score}</span>` : ''}
+      </div>
       <div class="batch-clip-info">
         <p class="batch-clip-title">${escHtml(t.title || `Momen ${t.moment_index}`)}</p>
         <p class="batch-clip-time">⏱ ${t.start} → ${t.end}</p>
-        <div style="display: flex; gap: 6px; margin-top: 8px;">
+        ${score != null ? `<p class="batch-clip-score-reason" title="${escHtml(t.virality_reason || '')}">${escHtml(t.virality_reason || '')}</p>` : ''}
+        <div style="display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;">
           <a href="${fileUrl}" download class="batch-clip-download" style="flex:1; text-align:center;">⬇️ Download</a>
-          <button type="button" class="btn batch-clip-detail-btn" style="flex:1; padding: 6px;" onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index})">✨ Detail</button>
+          ${thumbUrl ? `<a href="${thumbUrl}" download class="batch-clip-download" style="flex:1; text-align:center;">🖼️ Thumbnail</a>` : ''}
+          <button type="button" class="btn batch-clip-detail-btn" style="flex:1; padding: 6px;" onclick="window.openClipDetailsModal('${fileUrl}', '${t.start}', '${t.end}', ${t.moment_index}, '${t.task_id}')">✨ Detail</button>
         </div>
       </div>
     `;
 
     // Click on video in gallery -> play in workspace
-    card.querySelector('.batch-clip-video').addEventListener('click', () => {
-      showWorkspacePlayer(fileUrl, t.output_file);
-      highlightTimeline(t.start, t.end);
-    });
+    const mediaEl = card.querySelector('video, img');
+    if (mediaEl) {
+      mediaEl.addEventListener('click', () => {
+        showWorkspacePlayer(fileUrl, t.output_file);
+        highlightTimeline(t.start, t.end);
+      });
+    }
 
     batchClipsGrid.appendChild(card);
   });
@@ -1761,7 +1825,7 @@ if (clipModal) {
   });
 }
 
-window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
+window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex, taskId) {
   // Reset UI
   clipModal.style.display = 'flex';
   modalVideoPlayer.src = fileUrl;
@@ -1771,6 +1835,42 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex) {
   modalCaption.innerHTML = '';
   modalCta.innerHTML = '';
   modalHashtags.innerHTML = '';
+
+  // Reset virality metadata UI
+  const modalMetaScore = $('modal-meta-score');
+  const modalMetaReason = $('modal-meta-reason');
+  const modalMetaThumb = $('modal-meta-thumb');
+  if (modalMetaScore) modalMetaScore.style.display = 'none';
+  if (modalMetaReason) modalMetaReason.textContent = '';
+  if (modalMetaThumb) {
+    modalMetaThumb.src = '';
+    modalMetaThumb.style.display = 'none';
+  }
+
+  // Fetch task metadata if taskId available
+  if (taskId) {
+    try {
+      const metaRes = await fetch(`/task-meta/${taskId}`);
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        if (meta.virality_score != null && modalMetaScore) {
+          const scoreClass = meta.virality_score >= 75 ? 'high' : meta.virality_score >= 50 ? 'medium' : 'low';
+          modalMetaScore.className = `modal-meta-score ${scoreClass}`;
+          modalMetaScore.textContent = meta.virality_score;
+          modalMetaScore.style.display = 'inline-flex';
+        }
+        if (meta.virality_reason && modalMetaReason) {
+          modalMetaReason.textContent = meta.virality_reason;
+        }
+        if (meta.thumbnail_file && modalMetaThumb) {
+          modalMetaThumb.src = `/download-thumb/${meta.thumbnail_file}`;
+          modalMetaThumb.style.display = 'block';
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch task metadata:', e);
+    }
+  }
 
   const apiKey = localStorage.getItem('clipper_gemini_key') || (ctrlApiKey ? ctrlApiKey.value : '');
   const url = ctrlVideoUrl || urlInput.value;

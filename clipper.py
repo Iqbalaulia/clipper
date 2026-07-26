@@ -13,6 +13,8 @@ from typing import Dict, Any
 import face_tracker
 import models
 import runner
+import virality
+import thumbnail
 
 # Global lock to prevent multiple yt-dlp instances from downloading the same video concurrently
 DOWNLOAD_LOCK = threading.Lock()
@@ -190,6 +192,36 @@ def _parse_srt(srt_text: str) -> list:
             continue
         segments.append({"start": m.group(1), "end": m.group(2), "text": text})
     return segments
+
+
+def _extract_clip_segments(srt_path: str, start_sec: float, end_sec: float) -> list:
+    """
+    Parse an SRT/VTT file and return segments that overlap with [start_sec, end_sec].
+    Returned segments use relative timestamps so they are suitable for virality scoring.
+    """
+    if not srt_path or not os.path.isfile(srt_path):
+        return []
+    try:
+        with open(srt_path, "r", encoding="utf-8", errors="replace") as fh:
+            raw = fh.read()
+    except Exception:
+        return []
+
+    all_segments = _parse_srt(raw)
+    clip_segments = []
+    for seg in all_segments:
+        s = _seconds_from_ts(seg["start"])
+        e = _seconds_from_ts(seg["end"])
+        # Overlap test
+        if e >= start_sec and s <= end_sec:
+            rel_start = max(0.0, s - start_sec)
+            rel_end = max(0.0, e - start_sec)
+            clip_segments.append({
+                "start": _seconds_to_hhmmss(rel_start),
+                "end": _seconds_to_hhmmss(rel_end),
+                "text": seg["text"],
+            })
+    return clip_segments
 
 
 def _snap_to_sentence_boundaries(
@@ -680,12 +712,15 @@ def run_clip(
     download_resolution: str = "best",
     output_resolution: str = "1080",
     output_quality: str = "standard",
+    moment_index: int = 0,
 ):
     """
     Full pipeline: download → (download subtitles) → cut → (embed subtitles) → cleanup.
     Runs in a background thread.
     """
     os.makedirs(output_dir, exist_ok=True)
+    if moment_index:
+        _update_task(task_id, moment_index=moment_index)
 
     _append_log(
         task_id,
@@ -1526,6 +1561,56 @@ def run_clip(
             ffmpeg_cmd.append(output_path)
             _run_ffmpeg(task_id, ffmpeg_cmd, start=50, end=85, start_str=start, end_str=end)
 
+        # ── Step 4: Virality scoring & thumbnail generation ────────────────────
+        try:
+            start_sec = _parse_seconds(start)
+            end_sec = _parse_seconds(end)
+
+            # Collect transcript segments inside the clip window for scoring
+            clip_segments = []
+            if subtitle_enabled and shifted_sub_path and os.path.isfile(shifted_sub_path):
+                # shifted_sub_path timestamps are already relative to clip start
+                clip_segments = _parse_srt(open(shifted_sub_path, "r", encoding="utf-8", errors="replace").read())
+            elif subtitle_enabled and subtitle_file and os.path.isfile(subtitle_file):
+                clip_segments = _extract_clip_segments(subtitle_file, start_sec, end_sec)
+
+            score_info = virality.score_moment(
+                start_sec=start_sec,
+                end_sec=end_sec,
+                hook_title=hook_title or "",
+                transcript_segments=clip_segments,
+            )
+            _append_log(
+                task_id,
+                f"[VIRALITY] Skor: {score_info['score']}/100 ({score_info['badge']}) — {score_info['reason']}"
+            )
+
+            # Generate thumbnail image for the clip
+            thumb_files = thumbnail.generate_thumbnails(
+                video_path=output_path,
+                hook_title=hook_title or "CLIP",
+                output_dir=output_dir,
+                task_id=task_id,
+                video_format=video_format,
+                num_variants=1,
+            )
+            thumb_file = os.path.basename(thumb_files[0]) if thumb_files else None
+            if thumb_file:
+                _append_log(task_id, f"[THUMBNAIL] Thumbnail tersimpan: {thumb_file}")
+
+            _update_task(
+                task_id,
+                status="done",
+                progress=100,
+                output_file=output_filename,
+                virality_score=score_info["score"],
+                virality_reason=score_info["reason"],
+                thumbnail_file=thumb_file,
+            )
+        except Exception as meta_err:
+            _append_log(task_id, f"[VIRALITY] Gagal menghitung metadata: {meta_err}")
+            _update_task(task_id, status="done", progress=100, output_file=output_filename)
+
         # ── Step 5: Cleanup ──────────────────────────────────────────────────
         # Delete ONLY task-specific temp files. The video cache (_cache_{video_id}.mp4)
         # is intentionally kept for reuse on subsequent clips of the same video.
@@ -1547,7 +1632,6 @@ def run_clip(
                     pass
 
         _append_log(task_id, f"[DONE] Selesai! File tersimpan: {output_filename}")
-        _update_task(task_id, status="done", progress=100, output_file=output_filename)
 
     except Exception as exc:
         _append_log(task_id, f"[ERR] Error: {exc}")

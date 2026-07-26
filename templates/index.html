@@ -932,6 +932,14 @@
         <div class="download-card" id="download-card">
           <span class="success-icon">🎉</span>
           <h3>Video Berhasil Dipotong!</h3>
+          <div id="single-clip-meta" style="display:none; margin-bottom:12px; padding:10px; background:var(--rb-sunken); border:3px solid var(--rb-black);">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="font-family:'Archivo Black',sans-serif; font-size:.72rem; text-transform:uppercase;">Virality Score</span>
+              <span id="single-clip-score" class="modal-meta-score">0</span>
+            </div>
+            <p id="single-clip-reason" style="font-size:.75rem; line-height:1.4; margin-bottom:8px;"></p>
+            <img id="single-clip-thumb" style="width:100%; aspect-ratio:16/9; object-fit:cover; border:2px solid var(--rb-black); display:none;" alt="Thumbnail" />
+          </div>
           <p id="download-name" style="font-family:'Space Mono',monospace; font-size:.78rem; color:var(--accent-success); margin-bottom:12px; text-align:center;"></p>
           <div class="video-preview-wrap">
             <video id="preview-video" controls preload="metadata"></video>
@@ -1000,6 +1008,16 @@
         <video id="modal-video-player" controls preload="metadata"></video>
       </div>
       <div class="modal-text-container">
+        <!-- Virality Score & Thumbnail -->
+        <div class="modal-meta-section" id="modal-meta-section">
+          <div class="modal-meta-row">
+            <span class="modal-meta-label">Virality Score</span>
+            <span class="modal-meta-score" id="modal-meta-score" style="display:none;">0</span>
+          </div>
+          <p class="modal-meta-reason" id="modal-meta-reason"></p>
+          <img class="modal-meta-thumb" id="modal-meta-thumb" alt="Thumbnail" style="display:none;" />
+        </div>
+
         <div class="field" style="margin-bottom:12px;">
           <label for="modal-ai-language">Bahasa Copywriting</label>
           <div class="input-wrap select-wrap">

@@ -356,6 +356,26 @@ Kontrol resolusi unduhan, resolusi output, dan profil kualitas encoding agar cli
 
 ---
 
+## Virality Score & Thumbnail Otomatis
+
+**Deskripsi:**
+Setiap clip yang dihasilkan (manual maupun batch Auto-Clip) otomatis mendapatkan **Virality Score** (0-100) dan **thumbnail image** yang bisa diunduh. Skor dihitung dari kombinasi heuristik lokal (durasi ideal, kekuatan hook title, konten transkrip, struktur kalimat) tanpa memerlukan API key tambahan. Thumbnail dihasilkan dengan mengekstrak frame kunci dari clip dan membakar hook title menggunakan FFmpeg.
+
+**Cara Pakai:**
+1. Hasilkan clip melalui **Manual Clip** atau **Auto-Clip AI**.
+2. Setelah selesai, di panel hasil / gallery akan muncul badge **Virality Score** dan tombol **🖼️ Thumbnail**.
+3. Klik **✨ Detail** untuk melihat skor lengkap, alasan skor, dan thumbnail di modal.
+
+**Teknologi:**
+- Heuristik lokal di `virality.py` (durasi, hook, keyword, struktur).
+- Thumbnail generation di `thumbnail.py` menggunakan FFmpeg `drawtext` (tanpa Pillow/ImageMagick).
+- Endpoint `/task-meta/<task_id>` untuk mengambil metadata hasil.
+- Endpoint `/download-thumb/<filename>` untuk mengunduh thumbnail.
+
+**File terkait:** `virality.py`, `thumbnail.py`, `clipper.py`, `models.py`, `app.py`, `static/app.js`, `templates/index.html`, `static/style.css`
+
+---
+
 ## Ringkasan File Utama per Fitur
 
 | Fitur | File Utama | Catatan |
@@ -376,6 +396,7 @@ Kontrol resolusi unduhan, resolusi output, dan profil kualitas encoding agar cli
 | SSE Progress | `app.py`, `static/app.js` | `/progress/<task_id>` |
 | Format Output | `clipper.py` | 6 format |
 | Resolution & Quality | `clipper.py`, `app.py`, `static/app.js` | Download, output, CRF |
+| Virality Score & Thumbnail | `virality.py`, `thumbnail.py`, `clipper.py`, `models.py`, `app.py`, `static/app.js`, `templates/index.html`, `static/style.css` | `/task-meta`, `/download-thumb` |
 
 ---
 

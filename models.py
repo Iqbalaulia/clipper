@@ -31,6 +31,10 @@ class Task:
     params: dict
     created_at: str
     updated_at: str
+    virality_score: Optional[int] = None
+    virality_reason: Optional[str] = None
+    thumbnail_file: Optional[str] = None
+    moment_index: int = 0
 
 
 def _now() -> str:
@@ -64,7 +68,19 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
         """
     )
+    # Backward-compatible migrations: add columns introduced by later features
+    _add_column_if_missing(conn, "tasks", "virality_score", "INTEGER")
+    _add_column_if_missing(conn, "tasks", "virality_reason", "TEXT")
+    _add_column_if_missing(conn, "tasks", "thumbnail_file", "TEXT")
+    _add_column_if_missing(conn, "tasks", "moment_index", "INTEGER DEFAULT 0")
     conn.commit()
+
+
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, ddl_type: str) -> None:
+    """Add a column only if it does not already exist (SQLite-safe)."""
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
 
 
 @contextmanager
@@ -85,17 +101,30 @@ def init_db() -> None:
         _init_tables(conn)
 
 
-def create_task(task_id: str, params: Optional[dict] = None) -> dict:
+def create_task(
+    task_id: str,
+    params: Optional[dict] = None,
+    virality_score: Optional[int] = None,
+    virality_reason: Optional[str] = None,
+    thumbnail_file: Optional[str] = None,
+    moment_index: int = 0,
+) -> dict:
     """Create a new task row and return its state."""
     params = params or {}
     now = _now()
     with _connect() as conn:
         conn.execute(
             """
-            INSERT INTO tasks (id, status, progress, output_file, error, params, logs, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tasks (
+                id, status, progress, output_file, error, params, logs,
+                created_at, updated_at, virality_score, virality_reason, thumbnail_file, moment_index
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (task_id, "pending", 0, None, None, json.dumps(params), "[]", now, now),
+            (
+                task_id, "pending", 0, None, None, json.dumps(params), "[]",
+                now, now, virality_score, virality_reason, thumbnail_file, moment_index,
+            ),
         )
         conn.commit()
     return get_task(task_id)
@@ -105,7 +134,12 @@ def get_task(task_id: str) -> Optional[dict]:
     """Return a task dict including its logs."""
     with _connect() as conn:
         row = conn.execute(
-            "SELECT id, status, progress, output_file, error, params, created_at, updated_at FROM tasks WHERE id = ?",
+            """
+            SELECT
+                id, status, progress, output_file, error, params, created_at, updated_at,
+                virality_score, virality_reason, thumbnail_file, moment_index
+            FROM tasks WHERE id = ?
+            """,
             (task_id,),
         ).fetchone()
         if not row:
@@ -126,7 +160,10 @@ def get_task(task_id: str) -> Optional[dict]:
 
 def update_task(task_id: str, **kwargs) -> bool:
     """Update one or more task fields."""
-    allowed = {"status", "progress", "output_file", "error"}
+    allowed = {
+        "status", "progress", "output_file", "error",
+        "virality_score", "virality_reason", "thumbnail_file", "moment_index",
+    }
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
         return False

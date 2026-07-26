@@ -2502,6 +2502,134 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   }
 }
 
+/* ── Virality Score & Thumbnail Styling ─────────────────── */
+
+.ws-gallery-thumb-wrap,
+.batch-clip-thumb-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #000;
+  overflow: hidden;
+}
+
+.ws-gallery-thumb-wrap img,
+.ws-gallery-thumb-wrap video,
+.batch-clip-thumb-wrap img,
+.batch-clip-thumb-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ws-gallery-score,
+.batch-clip-score {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-family: 'Archivo Black', Impact, sans-serif;
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--rb-white);
+  border: 2px solid var(--rb-white);
+  text-shadow: 1px 1px 0 var(--rb-black);
+  box-shadow: 3px 3px 0 var(--rb-black);
+}
+
+.ws-gallery-score.high,
+.batch-clip-score.high { background: var(--rb-success); }
+.ws-gallery-score.medium,
+.batch-clip-score.medium { background: var(--rb-warning); color: var(--rb-black); text-shadow: none; }
+.ws-gallery-score.low,
+.batch-clip-score.low { background: var(--rb-error); }
+
+.ws-gallery-score-reason,
+.batch-clip-score-reason {
+  font-size: .65rem;
+  color: var(--rb-black);
+  line-height: 1.45;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ws-gallery-card-actions .thumb-download,
+.batch-clip-download.thumb-download {
+  background: var(--rb-white);
+  color: var(--rb-black);
+  border: 3px solid var(--rb-black);
+}
+
+.ws-gallery-card-actions .thumb-download:hover,
+.batch-clip-download.thumb-download:hover {
+  background: var(--rb-black);
+  color: var(--rb-white);
+}
+
+/* Modal virality metadata */
+.modal-meta-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--rb-sunken);
+  border: 3px solid var(--rb-black);
+}
+
+.modal-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.modal-meta-label {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--rb-black);
+}
+
+.modal-meta-score {
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-family: 'Archivo Black', Impact, sans-serif;
+  font-size: .9rem;
+  color: var(--rb-white);
+  border: 2px solid var(--rb-black);
+}
+
+.modal-meta-score.high { background: var(--rb-success); }
+.modal-meta-score.medium { background: var(--rb-warning); color: var(--rb-black); }
+.modal-meta-score.low { background: var(--rb-error); }
+
+.modal-meta-reason {
+  font-size: .78rem;
+  line-height: 1.5;
+  color: var(--rb-black);
+  margin-bottom: 10px;
+}
+
+.modal-meta-thumb {
+  width: 100%;
+  aspect-ratio: 16/9;
+  object-fit: cover;
+  border: 2px solid var(--rb-black);
+  background: #000;
+}
+
 /* Hide decorative gradient on workspace per RawBlock */
 .workspace-main::after {
   display: none;

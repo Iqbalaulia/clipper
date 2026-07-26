@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import models
 import task_queue
 import clipper
+import virality
+import thumbnail
 
 
 def test_create_and_get_task():
@@ -88,6 +90,71 @@ def test_vertical_target_height():
     assert clipper._vertical_target_height("1080", 720) == 720
     assert clipper._vertical_target_height("720", 2160) == 1280
     assert clipper._vertical_target_height("720", 720) == 720
+
+
+def test_virality_score_range():
+    result = virality.score_moment(0, 45, hook_title="Fakta Gila Terbongkar!", transcript_segments=[
+        {"start": "00:00:00", "end": "00:00:05", "text": "Ini fakta gila yang tidak disangka."},
+        {"start": "00:00:05", "end": "00:00:10", "text": "Apakah kamu siap?"},
+    ])
+    assert 0 <= result["score"] <= 100
+    assert result["badge"] in ("high", "medium", "low")
+    assert result["reason"]
+    assert "breakdown" in result
+
+
+def test_virality_score_ideal_clip():
+    segments = [
+        {"start": "00:00:00", "end": "00:00:15", "text": "Syok! Rahasia viral ini akhirnya terbongkar."},
+        {"start": "00:00:15", "end": "00:00:30", "text": "Dia ketahuan bohong selama 10 tahun."},
+        {"start": "00:00:30", "end": "00:00:45", "text": "Jangan skip kalau tidak mau kaget!"},
+    ]
+    result = virality.score_moment(0, 45, hook_title="RAHASIA VIRAL TERBONGKAR", transcript_segments=segments)
+    assert result["score"] >= 50
+
+
+def test_virality_score_poor_clip():
+    segments = [
+        {"start": "00:00:00", "end": "00:00:02", "text": "halo."},
+    ]
+    result = virality.score_moment(0, 5, hook_title="video", transcript_segments=segments)
+    assert result["score"] < 50
+
+
+def test_thumbnail_module_missing_video():
+    files = thumbnail.generate_thumbnails(
+        video_path="/nonexistent/path/video.mp4",
+        hook_title="TEST HOOK",
+        output_dir="outputs",
+        task_id="test-thumb",
+    )
+    assert files == []
+
+
+def test_extract_clip_segments():
+    import tempfile
+    srt_content = """1
+00:00:01,000 --> 00:00:05,000
+First line.
+
+2
+00:00:06,000 --> 00:00:10,000
+Second line.
+
+3
+00:00:11,000 --> 00:00:15,000
+Third line.
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".srt", delete=False, encoding="utf-8") as f:
+        f.write(srt_content)
+        path = f.name
+    try:
+        segments = clipper._extract_clip_segments(path, 3, 9)
+        assert len(segments) == 2
+        assert segments[0]["text"] == "First line."
+        assert segments[1]["text"] == "Second line."
+    finally:
+        os.remove(path)
 
 
 if __name__ == "__main__":
