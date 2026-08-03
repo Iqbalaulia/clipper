@@ -66,6 +66,12 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
     )
     # Backward-compatible migrations: add columns introduced by later features
@@ -265,6 +271,27 @@ def reset_stale_tasks() -> int:
         )
         conn.commit()
         return cur.rowcount
+
+
+def set_setting(key: str, value: str) -> None:
+    """Store or update a setting value."""
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            """,
+            (key, value, _now()),
+        )
+        conn.commit()
+
+
+def get_setting(key: str, default: str = "") -> str:
+    """Return a setting value or default if not found."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
 
 
 # Initialize tables on import
