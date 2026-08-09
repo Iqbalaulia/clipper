@@ -2,6 +2,7 @@ flask
 flask-login
 flask-jwt-extended
 bcrypt
+cryptography
 yt-dlp
 requests
 mediapipe

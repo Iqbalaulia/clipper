@@ -25101,3 +25101,152 @@ av.error.InvalidDataError: [Errno 1094995529] Invalid data found when processing
 2026-08-05 09:51:18,512 [INFO] clipper: Task queue started with 2 workers
 2026-08-05 10:11:02,355 [INFO] clipper: Task queue started with 2 workers
 2026-08-05 11:09:16,127 [INFO] clipper: Task queue started with 2 workers
+2026-08-09 16:22:21,783 [INFO] clipper: Task queue started with 2 workers
+2026-08-09 16:22:21,820 [INFO] werkzeug: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.9:5000
+2026-08-09 16:22:21,820 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-08-09 16:22:56,509 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:56] "GET / HTTP/1.1" 200 -
+2026-08-09 16:22:56,596 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:56] "GET /static/style.css HTTP/1.1" 200 -
+2026-08-09 16:22:56,753 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:56] "GET /static/app.js?v=3 HTTP/1.1" 200 -
+2026-08-09 16:22:57,472 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:57] "GET / HTTP/1.1" 200 -
+2026-08-09 16:22:57,544 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:57] "GET /static/style.css HTTP/1.1" 200 -
+2026-08-09 16:22:57,732 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:57] "GET /static/app.js?v=3 HTTP/1.1" 200 -
+2026-08-09 16:22:57,815 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:57] "[31m[1mGET /cookies-status HTTP/1.1[0m" 401 -
+2026-08-09 16:22:59,535 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:59] "GET /check-deps HTTP/1.1" 200 -
+2026-08-09 16:22:59,536 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:22:59] "GET /check-deps HTTP/1.1" 200 -
+2026-08-09 16:23:10,898 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:23:10] "POST /video-info HTTP/1.1" 200 -
+2026-08-09 16:23:11,939 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:23:11] "POST /video-info HTTP/1.1" 200 -
+2026-08-09 16:24:27,641 [WARNING] clipper: SMTP_HOST not configured; email to clippercosmo52@gmail.com was not sent.
+2026-08-09 16:24:27,642 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:24:27] "POST /api/auth/register HTTP/1.1" 200 -
+2026-08-09 16:25:27,039 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:25:27] "POST /video-info HTTP/1.1" 200 -
+2026-08-09 16:25:27,956 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:25:27] "POST /video-info HTTP/1.1" 200 -
+2026-08-09 16:25:28,577 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:25:28] "POST /video-info HTTP/1.1" 200 -
+2026-08-09 16:26:20,196 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:26:20] "POST /detect-moments HTTP/1.1" 200 -
+2026-08-09 16:27:37,202 [INFO] clipper: Task 1e6c0c3f-3c88-4745-8c46-fffa035641e9 submitted to queue (user_id=16)
+2026-08-09 16:27:37,217 [INFO] clipper: Task 0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26 submitted to queue (user_id=16)
+2026-08-09 16:27:37,231 [INFO] clipper: Task 8b758424-85ba-4a3c-9f3c-decaf7e7f5a8 submitted to queue (user_id=16)
+2026-08-09 16:27:37,244 [INFO] clipper: Task c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0 submitted to queue (user_id=16)
+2026-08-09 16:27:37,245 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:37] "POST /clip-moments HTTP/1.1" 200 -
+2026-08-09 16:27:37,256 [INFO] clipper: Task 1e6c0c3f-3c88-4745-8c46-fffa035641e9 picked up by worker
+2026-08-09 16:27:37,282 [INFO] clipper: Task 0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26 picked up by worker
+2026-08-09 16:27:38,061 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:38] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:39,172 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:39] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:39,664 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:39] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:40,776 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:40] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:41,291 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:41] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:42,379 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:42] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:42,858 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:42] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:43,960 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:43] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:44,461 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:44] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:45,570 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:45] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:46,065 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:46] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:47,168 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:47,665 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:48,777 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:48] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:48,983 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:48] "GET /api/auth/profile HTTP/1.1" 200 -
+2026-08-09 16:27:49,263 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:49] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:50,367 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:50] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:50,867 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:50] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:51,972 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:51] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:52,466 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:52] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:53,567 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:53] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:54,062 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:54] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:55,173 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:55] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:55,665 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:55] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:56,773 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:56] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:57,265 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:57] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:58,376 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:58] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:27:58,862 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:27:58] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:00,031 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:00] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:00,477 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:00] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:01,652 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:01] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:02,340 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:02] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:03,176 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:03] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:04,343 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:04] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:05,723 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:05] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:06,326 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:06] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:07,637 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:07] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:08,326 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:08] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:09,656 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:09] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:10,469 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:10] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:11,649 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:11] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:12,402 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:12] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:13,826 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:13] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:14,411 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:14] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:15,821 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:15] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:16,357 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:16] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:18,012 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:18] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:18,509 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:18] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:19,774 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:19] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:34,148 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:34] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:34,536 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:34] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:34,797 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:34] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,145 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,423 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,559 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,610 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,705 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,771 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:35,882 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:35] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:36,862 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:36] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:41,981 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:41] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:48,385 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:48] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:57,127 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:57] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:57,467 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:57] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:58,826 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:58] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:28:59,333 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:28:59] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:29:00,908 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:29:00] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:29:01,325 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:29:01] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:29:02,962 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:29:02] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:29:10,349 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:29:10] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:29:47,947 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:29:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:30:04,119 [INFO] clipper: Task 8b758424-85ba-4a3c-9f3c-decaf7e7f5a8 picked up by worker
+2026-08-09 16:30:47,344 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:30:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:31:47,924 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:31:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:32:00,845 [INFO] clipper: Task c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0 picked up by worker
+2026-08-09 16:32:47,351 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:32:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:33:47,650 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:33:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:34:47,356 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:34:47] "POST /batch-progress HTTP/1.1" 200 -
+2026-08-09 16:35:33,316 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,318 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,318 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_8b758424-85ba-4a3c-9f3c-decaf7e7f5a8.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,320 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_1e6c0c3f-3c88-4745-8c46-fffa035641e9.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,547 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,639 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_1e6c0c3f-3c88-4745-8c46-fffa035641e9.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,722 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_8b758424-85ba-4a3c-9f3c-decaf7e7f5a8.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:33,837 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:33] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:34,053 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:34] "[35m[1mGET /download/clip_8b758424-85ba-4a3c-9f3c-decaf7e7f5a8.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:34,161 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:34] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:34,374 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:34] "[35m[1mGET /download/clip_8b758424-85ba-4a3c-9f3c-decaf7e7f5a8.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:34,483 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:34] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:34,783 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:34] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:35:42,619 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:42] "GET /download/clip_1e6c0c3f-3c88-4745-8c46-fffa035641e9.mp4 HTTP/1.1" 200 -
+2026-08-09 16:35:43,737 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:43] "GET /download/clip_0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26.mp4 HTTP/1.1" 200 -
+2026-08-09 16:35:45,023 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:45] "GET /download/clip_8b758424-85ba-4a3c-9f3c-decaf7e7f5a8.mp4 HTTP/1.1" 200 -
+2026-08-09 16:35:45,701 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:35:45] "GET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1" 200 -
+2026-08-09 16:39:52,116 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:39:52] "GET /task-meta/8b758424-85ba-4a3c-9f3c-decaf7e7f5a8 HTTP/1.1" 200 -
+2026-08-09 16:39:52,133 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:39:52] "[35m[1mGET /download/clip_8b758424-85ba-4a3c-9f3c-decaf7e7f5a8.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:39:59,124 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:39:59] "POST /generate-copy HTTP/1.1" 200 -
+2026-08-09 16:44:37,894 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:37] "GET /task-meta/c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0 HTTP/1.1" 200 -
+2026-08-09 16:44:37,907 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:37] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:38,232 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:38] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:38,246 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:38] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:38,561 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:38] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:38,904 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:38] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:40,174 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:40] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:40,485 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:40] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:44:45,051 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:44:45] "POST /generate-copy HTTP/1.1" 200 -
+2026-08-09 16:49:37,946 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:49:37] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:49:38,536 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:49:38] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:49:38,859 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:49:38] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:49:39,125 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:49:39] "[35m[1mGET /download/clip_c6b257d5-b5c0-476d-9e17-e7f4f6ae48b0.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:50:05,811 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:50:05] "GET /task-meta/0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26 HTTP/1.1" 200 -
+2026-08-09 16:50:06,230 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:50:06] "[35m[1mGET /download/clip_0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:50:06,417 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:50:06] "[35m[1mGET /download/clip_0e5f3ae5-7f9c-4180-a4b5-19d2f286ed26.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:50:12,763 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:50:12] "POST /generate-copy HTTP/1.1" 200 -
+2026-08-09 16:52:40,424 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:52:40] "GET /task-meta/1e6c0c3f-3c88-4745-8c46-fffa035641e9 HTTP/1.1" 200 -
+2026-08-09 16:52:40,477 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:52:40] "[35m[1mGET /download/clip_1e6c0c3f-3c88-4745-8c46-fffa035641e9.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:52:40,875 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:52:40] "[35m[1mGET /download/clip_1e6c0c3f-3c88-4745-8c46-fffa035641e9.mp4 HTTP/1.1[0m" 206 -
+2026-08-09 16:52:49,470 [INFO] werkzeug: 127.0.0.1 - - [09/Aug/2026 16:52:49] "POST /generate-copy HTTP/1.1" 200 -

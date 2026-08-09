@@ -4,6 +4,7 @@ tests/test_core.py — Smoke tests for the refactored Clipper backend.
 
 import os
 import sys
+import uuid
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,6 +14,7 @@ import task_queue
 import clipper
 import virality
 import thumbnail
+import secure_store
 
 
 def test_create_and_get_task():
@@ -266,6 +268,81 @@ def test_auth_me_unauthenticated():
     assert res.status_code == 200
     data = res.get_json()
     assert data["authenticated"] is False
+
+
+def _registered_client(label):
+    client = _auth_client()
+    email = f"tenant_{label}_{uuid.uuid4().hex}@example.com"
+    response = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": label,
+    })
+    assert response.status_code == 200
+    return client, response.get_json()["user"]["id"]
+
+
+def test_task_queries_strictly_isolate_users():
+    user_a = models.create_user(f"isolation_a_{uuid.uuid4().hex}@example.com", "password123")
+    user_b = models.create_user(f"isolation_b_{uuid.uuid4().hex}@example.com", "password123")
+    task_a = f"tenant-task-{uuid.uuid4().hex}"
+    orphan = f"orphan-task-{uuid.uuid4().hex}"
+    try:
+        models.create_task(task_a, user_id=user_a.id, params={})
+        models.create_task(orphan, params={})
+        assert models.get_task(task_a, user_id=user_a.id) is not None
+        assert models.get_task(task_a, user_id=user_b.id) is None
+        assert models.get_task(orphan, user_id=user_a.id) is None
+        assert models.task_belongs_to_user(task_a, user_a.id)
+        assert not models.task_belongs_to_user(task_a, user_b.id)
+        assert not models.delete_task(task_a, user_id=user_b.id)
+    finally:
+        models.delete_task(task_a)
+        models.delete_task(orphan)
+
+
+def test_download_route_isolates_user_directories():
+    client_a, user_a = _registered_client("download-a")
+    client_b, user_b = _registered_client("download-b")
+    task_id = f"download-task-{uuid.uuid4().hex}"
+    filename = f"clip_{task_id}.mp4"
+    output_dir = clipper_app.get_user_output_dir(user_a)
+    path = os.path.join(output_dir, filename)
+    try:
+        models.create_task(task_id, user_id=user_a, params={})
+        models.update_task(task_id, status="done", output_file=filename)
+        with open(path, "wb") as output_file:
+            output_file.write(b"tenant-a")
+
+        assert client_a.get(f"/download/{filename}").status_code == 200
+        assert client_b.get(f"/download/{filename}").status_code == 404
+        assert clipper_app.get_user_output_dir(user_a) != clipper_app.get_user_output_dir(user_b)
+    finally:
+        models.delete_task(task_id)
+        if os.path.isfile(path):
+            os.remove(path)
+
+
+def test_user_secrets_and_cookies_are_encrypted_and_isolated():
+    user_a = models.create_user(f"secret_a_{uuid.uuid4().hex}@example.com", "password123")
+    user_b = models.create_user(f"secret_b_{uuid.uuid4().hex}@example.com", "password123")
+    secret = "AIza-test-secret-value"
+    cookie_content = b"example.com\tTRUE\t/\tTRUE\t0\tsession\tprivate-cookie"
+
+    models.set_user_secret(user_a.id, "gemini_api_key", secret)
+    assert models.get_user_secret(user_a.id, "gemini_api_key") == secret
+    assert models.get_user_secret(user_b.id, "gemini_api_key") == ""
+
+    secure_store.save_user_cookies(user_a.id, cookie_content)
+    encrypted_path = secure_store.user_cookies_path(user_a.id)
+    with open(encrypted_path, "rb") as encrypted_file:
+        encrypted = encrypted_file.read()
+    assert cookie_content not in encrypted
+    assert not secure_store.has_user_cookies(user_b.id)
+    with secure_store.materialize_user_cookies(user_a.id) as temporary_path:
+        with open(temporary_path, "rb") as temporary_file:
+            assert temporary_file.read() == cookie_content
+    assert not os.path.exists(temporary_path)
 
 
 if __name__ == "__main__":

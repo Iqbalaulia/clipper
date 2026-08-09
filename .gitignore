@@ -1,0 +1,13 @@
+# Runtime data and secrets
+data/*.db
+data/*.db-*
+data/.encryption_key
+data/users/
+cookies.txt
+outputs/
+logs/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/

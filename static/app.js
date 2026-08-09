@@ -1351,10 +1351,6 @@ if (btnGenerateHook) {
     const apiKey = geminiKeyInput ? geminiKeyInput.value.trim() : '';
 
     if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
-    if (!apiKey) return alert('Gemini API Key (di kolom AI Copywriter) wajib diisi untuk fitur ini!');
-
-    // Save key
-    localStorage.setItem('clipper_gemini_key', apiKey);
 
     const oldContent = btnGenerateHook.innerHTML;
     btnGenerateHook.disabled = true;
@@ -1393,9 +1389,8 @@ const btnCopyAi      = $('btn-copy-ai');
 const aiLanguage     = $('ai-language');
 const modalAiLanguage = $('modal-ai-language');
 
-// Load key from storage
-const savedKey = localStorage.getItem('clipper_gemini_key');
-if (savedKey) geminiKeyInput.value = savedKey;
+// API keys are persisted encrypted on the server, never in browser storage.
+localStorage.removeItem('clipper_gemini_key');
 
 // Load saved language preference
 const savedAiLang = localStorage.getItem('clipper_ai_language') || 'id';
@@ -1456,13 +1451,8 @@ btnGenerateAi.addEventListener('click', async () => {
   const apiKey = geminiKeyInput.value.trim();
 
   if (!url) return alert('Silakan masukkan URL video terlebih dahulu!');
-  if (!apiKey) return alert('Gemini API Key wajib diisi!');
-
   const language = aiLanguage ? aiLanguage.value : 'id';
   syncAiLanguage(language);
-
-  // Save key
-  localStorage.setItem('clipper_gemini_key', apiKey);
 
   // UI state
   btnGenerateAi.disabled = true;
@@ -1702,12 +1692,6 @@ const batchDownloadGallery = $('batch-download-gallery');
 const batchClipsGrid       = $('batch-clips-grid');
 const btnBatchReset        = $('btn-batch-reset');
 
-// ── Load saved API key ────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  const savedKey = localStorage.getItem('clipper_gemini_key');
-  if (savedKey && ctrlApiKey) ctrlApiKey.value = savedKey;
-});
-
 // ── Subtitle options panel show/hide ──────────────────────────
 if (ctrlSubtitleToggle) {
   ctrlSubtitleToggle.addEventListener('change', () => {
@@ -1733,10 +1717,6 @@ if (btnScan) {
     const cookies    = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
 
     if (!url)    { alert('URL video wajib diisi!'); ctrlUrlInput.focus(); return; }
-    if (!apiKey) { alert('Gemini API Key wajib diisi!'); ctrlApiKey.focus(); return; }
-
-    // Save API key
-    localStorage.setItem('clipper_gemini_key', apiKey);
     // Sync to main AI copywriter input too
     if (geminiKeyInput) geminiKeyInput.value = apiKey;
 
@@ -2249,7 +2229,7 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex, t
     }
   }
 
-  const apiKey = localStorage.getItem('clipper_gemini_key') || (ctrlApiKey ? ctrlApiKey.value : '');
+  const apiKey = ctrlApiKey ? ctrlApiKey.value : '';
   const url = ctrlVideoUrl || urlInput.value;
   const cookies = ctrlCookiesToggle ? ctrlCookiesToggle.checked : false;
   const language = modalAiLanguage ? modalAiLanguage.value : (aiLanguage ? aiLanguage.value : 'id');

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import models
 import clipper
 import runner
+import secure_store
 
 logger = logging.getLogger("clipper")
 
@@ -137,14 +138,20 @@ class TaskQueue:
             cancel_timer = threading.Timer(self.task_timeout, _timeout_cancel)
             cancel_timer.start()
 
-            clipper.run_clip(
-                task_id=task_id,
-                url=item.url,
-                start=item.start,
-                end=item.end,
-                output_dir=item.output_dir,
-                **item.kwargs,
-            )
+            kwargs = dict(item.kwargs)
+            cookies_user_id = kwargs.pop("cookies_user_id", None)
+            if cookies_user_id is not None:
+                with secure_store.materialize_user_cookies(cookies_user_id) as cookies_file:
+                    kwargs["cookies"] = cookies_file
+                    clipper.run_clip(
+                        task_id=task_id, url=item.url, start=item.start, end=item.end,
+                        output_dir=item.output_dir, **kwargs,
+                    )
+            else:
+                clipper.run_clip(
+                    task_id=task_id, url=item.url, start=item.start, end=item.end,
+                    output_dir=item.output_dir, **kwargs,
+                )
         except Exception as exc:
             logger.exception("Task %s failed with error: %s", task_id, exc)
             models.update_task(task_id, status="error", error=str(exc))

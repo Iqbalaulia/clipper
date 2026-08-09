@@ -39,17 +39,18 @@ from flask_jwt_extended import (
 import clipper
 import models
 import task_queue
+import secure_store
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
 LOGS_DIR    = os.path.join(BASE_DIR, "logs")
 
 
-def get_user_cookies_file(user_id=None):
-    """Return the cookies.txt path for a user (or legacy global file if no user)."""
-    if user_id is None:
-        return os.path.join(BASE_DIR, "cookies.txt")
-    return os.path.join(OUTPUT_DIR, f"cookies_{user_id}.txt")
+def get_user_output_dir(user_id: int) -> str:
+    """Return the isolated output directory for one user."""
+    path = os.path.join(OUTPUT_DIR, str(int(user_id)))
+    os.makedirs(path, exist_ok=True)
+    return path
 
 # Pastikan runtime Node.js bawaan (node.exe di folder proyek) bisa ditemukan
 # oleh subprocess yt-dlp meskipun aplikasi dijalankan dari cwd lain.
@@ -211,6 +212,7 @@ if stale_count:
 # Start the task queue
 MAX_CONCURRENT_WORKERS = int(os.environ.get("CLIPPER_MAX_WORKERS", "2"))
 TASK_TIMEOUT = int(os.environ.get("CLIPPER_TASK_TIMEOUT", "3600"))
+FREE_TASKS_PER_DAY = int(os.environ.get("FREE_TASKS_PER_DAY", "5"))
 task_queue.get_queue(max_workers=MAX_CONCURRENT_WORKERS, task_timeout=TASK_TIMEOUT)
 
 
@@ -219,13 +221,24 @@ def _current_user_id():
     return current_user.id if current_user.is_authenticated else None
 
 
-def _get_effective_cookies_file():
-    """Return the user's cookies file if it exists, otherwise the legacy global one."""
-    user_file = get_user_cookies_file(_current_user_id())
-    if os.path.isfile(user_file):
-        return user_file
-    global_file = os.path.join(BASE_DIR, "cookies.txt")
-    return global_file if os.path.isfile(global_file) else ""
+def _resolve_api_key(data: dict) -> str:
+    """Persist a supplied Gemini key encrypted, or use the user's stored key."""
+    api_key = (data.get("api_key") or "").strip()
+    if api_key:
+        models.set_user_secret(_current_user_id(), "gemini_api_key", api_key)
+        return api_key
+    return models.get_user_secret(_current_user_id(), "gemini_api_key")
+
+
+def _quota_error(requested_tasks: int = 1):
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    used = models.count_user_tasks_since(_current_user_id(), since)
+    if used + requested_tasks <= FREE_TASKS_PER_DAY:
+        return None
+    return jsonify({
+        "error": f"Kuota gratis {FREE_TASKS_PER_DAY} task per 24 jam telah habis.",
+        "quota": {"limit": FREE_TASKS_PER_DAY, "used": used, "remaining": max(0, FREE_TASKS_PER_DAY - used)},
+    }), 429
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -476,9 +489,7 @@ def profile():
 @app.route("/cookies-status")
 @login_required
 def cookies_status():
-    cookies_file = get_user_cookies_file(_current_user_id())
-    exists = os.path.isfile(cookies_file)
-    return jsonify({"exists": exists})
+    return jsonify({"exists": secure_store.has_user_cookies(_current_user_id())})
 
 
 @app.route("/upload-cookies", methods=["POST"])
@@ -491,10 +502,8 @@ def upload_cookies():
     if file.filename == "":
         return jsonify({"error": "Nama file kosong."}), 400
 
-    cookies_file = get_user_cookies_file(_current_user_id())
     try:
-        os.makedirs(os.path.dirname(cookies_file), exist_ok=True)
-        file.save(cookies_file)
+        secure_store.save_user_cookies(_current_user_id(), file.read())
         return jsonify({"success": True, "message": "File cookies.txt berhasil diunggah."})
     except Exception as e:
         return jsonify({"error": f"Gagal menyimpan file: {str(e)}"}), 500
@@ -532,6 +541,7 @@ def check_deps():
 
 
 @app.route("/video-info", methods=["POST"])
+@login_required
 def video_info():
     """Fetch video metadata (thumbnail, title, duration, channel) without downloading."""
     data = request.get_json(force=True)
@@ -545,11 +555,11 @@ def video_info():
             sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist",
             "--no-check-certificates",
         ]
-        if os.path.isfile(_get_effective_cookies_file()):
-            cmd += ["--cookies", _get_effective_cookies_file()]
-        cmd.append(url)
-
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        with secure_store.materialize_user_cookies(_current_user_id()) as cookies_file:
+            if cookies_file:
+                cmd += ["--cookies", cookies_file]
+            cmd.append(url)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             return jsonify({"error": "Gagal mengambil info video."}), 400
 
@@ -652,10 +662,14 @@ def clip():
     if output_quality not in _valid_quality:
         output_quality = "standard"
     
-    cookies_file = _get_effective_cookies_file()
+    quota_response = _quota_error()
+    if quota_response:
+        return quota_response
+    user_id = _current_user_id()
+    user_output_dir = get_user_output_dir(user_id)
 
     # Disk space check (rough estimate: 500 MB minimum)
-    if not _has_enough_disk_space(OUTPUT_DIR, min_bytes=500 * 1024 * 1024):
+    if not _has_enough_disk_space(user_output_dir, min_bytes=500 * 1024 * 1024):
         return jsonify({"error": "Ruang disk tidak mencukupi. Silakan kosongkan minimal 500 MB."}), 507
 
     task_id = str(uuid.uuid4())
@@ -684,7 +698,7 @@ def clip():
         "hook_fontsize": hook_fontsize,
         "hook_preset": hook_preset,
         "hook_position": hook_position,
-        "cookies": cookies_file,
+        "cookies_user_id": user_id,
         "auto_broll": auto_broll,
         "transcription_source": transcription_source,
         "whisper_model": whisper_model,
@@ -694,8 +708,8 @@ def clip():
     }
     task_queue.submit_task(
         task_id=task_id, url=url, start=start, end=end,
-        output_dir=OUTPUT_DIR, kwargs=kwargs,
-        user_id=_current_user_id(),
+        output_dir=user_output_dir, kwargs=kwargs,
+        user_id=user_id,
     )
 
     return jsonify({"task_id": task_id})
@@ -764,7 +778,7 @@ def download(filename: str):
     task = models.get_task_by_output_file(filename, user_id=_current_user_id())
     if task is None:
         return jsonify({"error": "File tidak ditemukan atau bukan milik Anda."}), 404
-    return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
+    return send_from_directory(get_user_output_dir(_current_user_id()), filename, as_attachment=True)
 
 
 @app.route("/download-thumb/<path:filename>")
@@ -774,7 +788,7 @@ def download_thumb(filename: str):
     task = models.get_task_by_thumbnail_file(filename, user_id=_current_user_id())
     if task is None:
         return jsonify({"error": "File tidak ditemukan atau bukan milik Anda."}), 404
-    return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
+    return send_from_directory(get_user_output_dir(_current_user_id()), filename, as_attachment=True)
 
 
 @app.route("/task-meta/<task_id>")
@@ -929,7 +943,7 @@ def generate_hook():
     """Meminta AI (Gemini) untuk membuat hook title singkat berdasarkan video."""
     data = request.get_json(force=True)
     url = data.get("url")
-    api_key = data.get("api_key")
+    api_key = _resolve_api_key(data)
     start_time = data.get("start", "")
     end_time = data.get("end", "")
 
@@ -941,9 +955,10 @@ def generate_hook():
         cmd = [
             sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist", url
         ]
-        if os.path.isfile(_get_effective_cookies_file()):
-            cmd += ["--cookies", _get_effective_cookies_file()]
-        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        with secure_store.materialize_user_cookies(_current_user_id()) as cookies_file:
+            if cookies_file:
+                cmd += ["--cookies", cookies_file]
+            r = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(r.stdout)
         
         title = info.get("title", "Video tanpa judul")
@@ -1017,7 +1032,7 @@ def generate_copy():
     """Meminta AI (Gemini) untuk membuat copywriting berdasarkan deskripsi & waktu video."""
     data = request.get_json(force=True)
     url = data.get("url")
-    api_key = data.get("api_key")
+    api_key = _resolve_api_key(data)
     start_time = data.get("start", "")
     end_time = data.get("end", "")
     clip_title = data.get("clip_title", "")
@@ -1038,9 +1053,10 @@ def generate_copy():
             # 1. Ekstrak metadata video dengan yt-dlp
             cmd = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist", url]
             use_cookies = bool(data.get("cookies", False))
-            if use_cookies and os.path.isfile(_get_effective_cookies_file()):
-                cmd += ["--cookies", _get_effective_cookies_file()]
-            r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            with secure_store.materialize_user_cookies(_current_user_id()) as cookies_file:
+                if use_cookies and cookies_file:
+                    cmd += ["--cookies", cookies_file]
+                r = subprocess.run(cmd, capture_output=True, text=True, check=True)
             info = json.loads(r.stdout)
             
             title = info.get("title", "Video tanpa judul")
@@ -1194,10 +1210,11 @@ def srt_timestamp_to_seconds(ts):
 def detect_moments():
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
-    api_key = (data.get("api_key") or "").strip()
+    api_key = _resolve_api_key(data)
     num_moments = int(data.get("num_moments") or 4)
     subtitle_lang = (data.get("subtitle_lang") or "id,en").strip()
-    use_cookies = os.path.isfile(_get_effective_cookies_file())
+    user_output_dir = get_user_output_dir(_current_user_id())
+    use_cookies = secure_store.has_user_cookies(_current_user_id())
 
     if not url: return jsonify({"error": "URL video wajib diisi."}), 400
     if not api_key: return jsonify({"error": "Gemini API Key wajib diisi."}), 400
@@ -1208,11 +1225,11 @@ def detect_moments():
             sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist",
             "--no-check-certificates",
         ]
-        if use_cookies:
-            cmd += ["--cookies", _get_effective_cookies_file()]
-        cmd.append(url)
-
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        with secure_store.materialize_user_cookies(_current_user_id()) as cookies_file:
+            if cookies_file:
+                cmd += ["--cookies", cookies_file]
+            cmd.append(url)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             stderr_text = (r.stderr or "") + (r.stdout or "")
             if "cookies are no longer valid" in stderr_text:
@@ -1245,22 +1262,22 @@ def detect_moments():
             "--sub-lang", subtitle_lang, "--convert-subs", "srt",
             "--skip-download",
             "--no-check-certificates",
-            "--output", os.path.join(OUTPUT_DIR, "_scan_%(id)s.%(ext)s"),
+            "--output", os.path.join(user_output_dir, "_scan_%(id)s.%(ext)s"),
             "--no-playlist",
         ]
-        if use_cookies:
-            sub_cmd += ["--cookies", _get_effective_cookies_file()]
-        sub_cmd.append(url)
-
-        sub_result = subprocess.run(sub_cmd, capture_output=True, text=True, timeout=90)
+        with secure_store.materialize_user_cookies(_current_user_id()) as cookies_file:
+            if cookies_file:
+                sub_cmd += ["--cookies", cookies_file]
+            sub_cmd.append(url)
+            subprocess.run(sub_cmd, capture_output=True, text=True, timeout=90)
 
         video_id = info.get("id", "unknown")
         srt_files_found = []
-        for f in os.listdir(OUTPUT_DIR):
+        for f in os.listdir(user_output_dir):
             if f.startswith(f"_scan_{video_id}") and f.endswith(".srt"):
                 srt_files_found.append(f)
                 try:
-                    with open(os.path.join(OUTPUT_DIR, f), "r", encoding="utf-8") as srt_f:
+                    with open(os.path.join(user_output_dir, f), "r", encoding="utf-8") as srt_f:
                         raw_srt += srt_f.read() + "\n"
                 except Exception:
                     pass
@@ -1412,10 +1429,15 @@ def clip_moments():
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
     moments = data.get("moments") or []
-    cookies_file = _get_effective_cookies_file() if os.path.isfile(_get_effective_cookies_file()) else ""
 
     if not url or not moments:
         return jsonify({"error": "URL dan momen wajib diisi."}), 400
+
+    quota_response = _quota_error(len(moments))
+    if quota_response:
+        return quota_response
+    user_id = _current_user_id()
+    user_output_dir = get_user_output_dir(user_id)
 
     # Subtitle settings
     subtitle_enabled  = bool(data.get("subtitle_enabled", False))
@@ -1488,7 +1510,7 @@ def clip_moments():
             "hook_fontsize": str(data.get("hook_fontsize", "34")),
             "hook_preset": data.get("hook_preset", "yellow-pop"),
             "hook_position": data.get("hook_position", "top"),
-            "cookies": cookies_file,
+            "cookies_user_id": user_id,
             "auto_broll": auto_broll,
             "transcription_source": transcription_source,
             "whisper_model": whisper_model,
@@ -1497,7 +1519,7 @@ def clip_moments():
             "output_quality": output_quality,
             "moment_index": moment_index,
         }
-        task_queue.submit_task(task_id, url, start, end, OUTPUT_DIR, kwargs, user_id=_current_user_id())
+        task_queue.submit_task(task_id, url, start, end, user_output_dir, kwargs, user_id=user_id)
         task_list.append({
             "task_id": task_id,
             "moment_index": moment.get("index", 0),

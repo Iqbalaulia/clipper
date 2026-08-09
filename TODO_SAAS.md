@@ -28,12 +28,12 @@ Dokumen ini merinci fitur-fitur yang perlu dibangun untuk mengubah **Video Clipp
 - [x] Password hashing (bcrypt/Argon2)
 
 ### Multi-Tenancy & Data Isolation
-- [ ] Tambahkan `user_id` ke tabel `tasks` dan semua entitas terkait
-- [ ] Isolasi output file per user (folder atau prefix)
-- [ ] Isolasi `cookies.txt` per user (encrypted at rest)
-- [ ] Enkripsi API key Gemini per user
-- [ ] Middleware authorization agar user hanya akses data sendiri
-- [ ] Default quota per user (free tier)
+- [x] Tambahkan `user_id` ke tabel `tasks` dan semua entitas terkait
+- [x] Isolasi output file per user (folder atau prefix)
+- [x] Isolasi `cookies.txt` per user (encrypted at rest)
+- [x] Enkripsi API key Gemini per user
+- [x] Middleware authorization agar user hanya akses data sendiri
+- [x] Default quota per user (free tier)
 
 ### Cloud Storage & CDN
 - [ ] Upload hasil clip ke cloud storage (S3 / R2 / Wasabi / MinIO)

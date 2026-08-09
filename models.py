@@ -17,6 +17,7 @@ from contextlib import contextmanager
 
 from werkzeug.security import check_password_hash
 from flask_login import UserMixin
+import secure_store
 
 try:
     import bcrypt
@@ -160,6 +161,15 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             value TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS user_secrets (
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            encrypted_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, name),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         """
     )
     # 2. Backward-compatible migrations: add columns introduced by later features.
@@ -241,12 +251,11 @@ def create_task(
             ),
         )
         conn.commit()
-    return get_task(task_id)
+    return get_task(task_id, user_id=user_id) if user_id is not None else get_task(task_id)
 
 
 def get_task(task_id: str, user_id: Optional[int] = None) -> Optional[dict]:
-    """Return a task dict including its logs. If user_id is provided, only return
-    tasks owned by that user (or orphan tasks with no owner for backward compat)."""
+    """Return task state, strictly scoped to user_id when supplied."""
     with _connect() as conn:
         sql = """
             SELECT
@@ -256,7 +265,7 @@ def get_task(task_id: str, user_id: Optional[int] = None) -> Optional[dict]:
         """
         params = [task_id]
         if user_id is not None:
-            sql += " AND (user_id = ? OR user_id IS NULL)"
+            sql += " AND user_id = ?"
             params.append(user_id)
         row = conn.execute(sql, params).fetchone()
         if not row:
@@ -319,7 +328,7 @@ def list_tasks(status: Optional[str] = None, user_id: Optional[int] = None, limi
             where_clauses.append("status = ?")
             params.append(status)
         if user_id is not None:
-            where_clauses.append("(user_id = ? OR user_id IS NULL)")
+            where_clauses.append("user_id = ?")
             params.append(user_id)
 
         where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
@@ -336,7 +345,7 @@ def delete_task(task_id: str, user_id: Optional[int] = None) -> bool:
         sql = "DELETE FROM tasks WHERE id = ?"
         params = [task_id]
         if user_id is not None:
-            sql += " AND (user_id = ? OR user_id IS NULL)"
+            sql += " AND user_id = ?"
             params.append(user_id)
         cur = conn.execute(sql, params)
         conn.commit()
@@ -360,6 +369,16 @@ def get_pending_tasks(limit: int = 10) -> list:
             (limit,),
         ).fetchall()
         return [get_task(r["id"]) for r in rows]
+
+
+def count_user_tasks_since(user_id: int, since: str) -> int:
+    """Count tasks created by a user since an ISO-8601 timestamp."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE user_id = ? AND created_at >= ?",
+            (user_id, since),
+        ).fetchone()
+        return int(row[0]) if row else 0
 
 
 def cleanup_old_tasks(days: int = 7) -> int:
@@ -412,6 +431,42 @@ def get_setting(key: str, default: str = "") -> str:
     with _connect() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else default
+
+
+def set_user_secret(user_id: int, name: str, value: str) -> None:
+    """Encrypt and store a secret scoped to one user."""
+    encrypted_value = secure_store.encrypt_text(value)
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_secrets (user_id, name, encrypted_value, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, name) DO UPDATE SET
+                encrypted_value = excluded.encrypted_value,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, name, encrypted_value, _now()),
+        )
+        conn.commit()
+
+
+def get_user_secret(user_id: int, name: str, default: str = "") -> str:
+    """Return a decrypted user secret without exposing another user's value."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT encrypted_value FROM user_secrets WHERE user_id = ? AND name = ?",
+            (user_id, name),
+        ).fetchone()
+    return secure_store.decrypt_text(row["encrypted_value"]) if row else default
+
+
+def has_user_secret(user_id: int, name: str) -> bool:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM user_secrets WHERE user_id = ? AND name = ?",
+            (user_id, name),
+        ).fetchone()
+        return row is not None
 
 
 # ── Auth helpers ─────────────────────────────────────────────────────────────
@@ -600,7 +655,7 @@ def reset_password(token: str, new_password: str) -> bool:
 
 
 def task_belongs_to_user(task_id: str, user_id: int) -> bool:
-    """Check whether a task is owned by the given user (or is an orphan task)."""
+    """Check whether a task is strictly owned by the given user."""
     with _connect() as conn:
         row = conn.execute(
             "SELECT user_id FROM tasks WHERE id = ?",
@@ -608,7 +663,7 @@ def task_belongs_to_user(task_id: str, user_id: int) -> bool:
         ).fetchone()
         if not row:
             return False
-        return row["user_id"] is None or row["user_id"] == user_id
+        return row["user_id"] == user_id
 
 
 def get_task_by_output_file(filename: str, user_id: Optional[int] = None) -> Optional[dict]:
@@ -617,7 +672,7 @@ def get_task_by_output_file(filename: str, user_id: Optional[int] = None) -> Opt
         sql = "SELECT id FROM tasks WHERE output_file = ?"
         params = [filename]
         if user_id is not None:
-            sql += " AND (user_id = ? OR user_id IS NULL)"
+            sql += " AND user_id = ?"
             params.append(user_id)
         row = conn.execute(sql, params).fetchone()
         return get_task(row["id"], user_id=user_id) if row else None
@@ -629,7 +684,7 @@ def get_task_by_thumbnail_file(filename: str, user_id: Optional[int] = None) -> 
         sql = "SELECT id FROM tasks WHERE thumbnail_file = ?"
         params = [filename]
         if user_id is not None:
-            sql += " AND (user_id = ? OR user_id IS NULL)"
+            sql += " AND user_id = ?"
             params.append(user_id)
         row = conn.execute(sql, params).fetchone()
         return get_task(row["id"], user_id=user_id) if row else None
