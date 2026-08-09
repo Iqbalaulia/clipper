@@ -15,6 +15,9 @@ import clipper
 import virality
 import thumbnail
 import secure_store
+import billing
+import cloud_storage
+import saas
 
 
 def test_create_and_get_task():
@@ -343,6 +346,71 @@ def test_user_secrets_and_cookies_are_encrypted_and_isolated():
         with open(temporary_path, "rb") as temporary_file:
             assert temporary_file.read() == cookie_content
     assert not os.path.exists(temporary_path)
+
+
+def test_oauth_identity_is_idempotent():
+    email = f"oauth_{uuid.uuid4().hex}@example.com"
+    subject = uuid.uuid4().hex
+    first = models.get_or_create_oauth_user("google", subject, email, "OAuth User")
+    second = models.get_or_create_oauth_user("google", subject, email, "Changed Name")
+    assert first.id == second.id
+    assert first.email == email
+    assert first.email_verified is True
+
+
+def test_monthly_usage_quota_and_idempotency():
+    user = models.create_user(f"usage_{uuid.uuid4().hex}@example.com", "password123")
+    key = f"usage-test-{uuid.uuid4().hex}"
+    saas.consume_usage(user.id, "clip_count", 1, key)
+    saas.consume_usage(user.id, "clip_count", 1, key)
+    summary = saas.usage_summary(user.id)
+    assert summary["period"] == saas.period_key()
+    assert summary["metrics"]["clip_count"]["used"] == 1
+    with pytest.raises(PermissionError):
+        saas.consume_usage(user.id, "clip_count", 99, f"{key}-overflow")
+
+
+def test_subscription_plan_and_actions():
+    user = models.create_user(f"subscription_{uuid.uuid4().hex}@example.com", "password123")
+    subscription = saas.set_subscription(user.id, "pro", "active", "manual")
+    assert subscription["plan_code"] == "pro"
+    assert saas.usage_summary(user.id)["plan_code"] == "pro"
+    paused = saas.change_subscription(user.id, "pause")
+    assert paused["status"] == "paused"
+    resumed = saas.change_subscription(user.id, "resume")
+    assert resumed["status"] == "active"
+    cancelled = saas.change_subscription(user.id, "cancel")
+    assert cancelled["cancel_at_period_end"] is True
+
+
+def test_local_asset_metadata_and_tenant_scope(tmp_path):
+    user = models.create_user(f"asset_{uuid.uuid4().hex}@example.com", "password123")
+    other = models.create_user(f"asset_other_{uuid.uuid4().hex}@example.com", "password123")
+    task_id = f"asset-task-{uuid.uuid4().hex}"
+    output = tmp_path / "clip.mp4"
+    output.write_bytes(b"video")
+    try:
+        models.create_task(task_id, user_id=user.id, params={})
+        result = cloud_storage.persist_task_assets(task_id, str(output))
+        assert result["clip"]["provider"] == "local"
+        assert cloud_storage.get_asset(task_id, user.id, "clip") is not None
+        assert cloud_storage.get_asset(task_id, other.id, "clip") is None
+        assert cloud_storage.asset_urls(task_id, user.id)["download_url"].startswith("/download/")
+    finally:
+        models.delete_task(task_id)
+
+
+def test_plans_usage_and_subscription_api():
+    client, _ = _registered_client("saas-api")
+    plans_response = client.get("/api/plans")
+    assert plans_response.status_code == 200
+    assert {plan["code"] for plan in plans_response.get_json()["plans"]} == {"free", "pro", "team", "agency"}
+    usage_response = client.get("/api/usage")
+    assert usage_response.status_code == 200
+    assert "metrics" in usage_response.get_json()
+    subscription_response = client.get("/api/subscription")
+    assert subscription_response.status_code == 200
+    assert subscription_response.get_json()["subscription"]["plan_code"] == "free"
 
 
 if __name__ == "__main__":

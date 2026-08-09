@@ -63,6 +63,11 @@
       <button type="submit" id="auth-submit" class="btn btn-primary btn-full">MASUK</button>
     </form>
 
+    <div id="social-login" class="social-login" style="display:none;">
+      <div class="auth-divider"><span>ATAU</span></div>
+      <div id="social-login-buttons" class="social-login-buttons"></div>
+    </div>
+
     <div class="auth-footer" id="auth-footer">
       <button type="button" id="auth-forgot" class="btn btn-ghost" style="display:none;">Lupa password?</button>
       <span id="auth-mode-text">Belum punya akun?</span>
@@ -135,6 +140,8 @@
         </span>
       </div>
       <div class="user-banner" id="user-banner" style="display:none;">
+        <button type="button" id="quota-badge" class="quota-badge" title="Penggunaan clip bulan ini">FREE 0/5</button>
+        <button type="button" id="btn-upgrade" class="btn btn-primary btn-small">UPGRADE</button>
         <span class="user-name" id="user-name"></span>
         <button type="button" id="btn-profile" class="btn btn-secondary btn-small">PROFIL</button>
         <button type="button" id="btn-logout" class="btn btn-secondary btn-small">KELUAR</button>
@@ -1155,6 +1162,22 @@
         <div id="profile-message" class="auth-message" style="display:none;"></div>
         <button type="submit" class="btn btn-primary btn-full">SIMPAN PROFIL</button>
       </form>
+      <section class="billing-panel">
+        <div class="billing-panel-header">
+          <div>
+            <span class="form-label">PLAN &amp; SUBSCRIPTION</span>
+            <strong id="billing-current-plan">FREE</strong>
+          </div>
+          <span id="billing-status" class="quota-badge">ACTIVE</span>
+        </div>
+        <div id="pricing-plans" class="pricing-plans"></div>
+        <div class="billing-actions">
+          <button type="button" id="btn-sub-cancel" class="btn btn-secondary btn-small">CANCEL</button>
+          <button type="button" id="btn-sub-pause" class="btn btn-secondary btn-small">PAUSE</button>
+          <button type="button" id="btn-sub-resume" class="btn btn-secondary btn-small">RESUME</button>
+        </div>
+        <div id="invoice-list" class="invoice-list"></div>
+      </section>
     </div>
   </div>
 </div>

@@ -72,6 +72,25 @@ body {
   font-size: 16px;
 }
 
+.social-login { margin-top: 16px; }
+.auth-divider { display: flex; align-items: center; gap: 10px; font: 700 11px 'Space Mono', monospace; margin: 12px 0; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; border-top: 2px solid #000; }
+.social-login-buttons { display: grid; gap: 8px; }
+.social-btn { width: 100%; text-transform: uppercase; }
+.quota-badge { border: 2px solid #000; background: #fff; padding: 4px 8px; font: 700 11px 'Space Mono', monospace; cursor: pointer; }
+.quota-badge.warning { background: #FFA500; }
+.quota-badge.exhausted { background: #FF0000; color: #fff; }
+.billing-panel { border-top: 3px solid #000; margin-top: 20px; padding-top: 18px; }
+.billing-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.billing-panel-header strong { display: block; font: 24px 'Archivo Black', sans-serif; }
+.pricing-plans { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.pricing-plan { border: 2px solid #000; padding: 10px; background: #fff; }
+.pricing-plan strong, .pricing-plan span { display: block; }
+.pricing-plan span { font: 11px 'Space Mono', monospace; margin-bottom: 8px; }
+.billing-actions { display: flex; gap: 6px; margin-top: 10px; }
+.invoice-list { margin-top: 12px; max-height: 100px; overflow: auto; font: 11px 'Space Mono', monospace; }
+.invoice-row { display: flex; justify-content: space-between; border-top: 1px solid #000; padding: 5px 0; }
+
 h1, h2, h3 {
   font-family: 'Archivo Black', Impact, sans-serif;
   font-weight: 400;

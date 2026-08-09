@@ -10,6 +10,7 @@ import os
 import json
 import re
 import sqlite3
+import secrets
 from datetime import datetime, timezone
 from typing import Optional, Any
 from dataclasses import dataclass, asdict
@@ -170,6 +171,84 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (user_id, name),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS oauth_identities (
+            provider TEXT NOT NULL,
+            provider_subject TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            provider_email TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (provider, provider_subject),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            object_key TEXT NOT NULL,
+            local_filename TEXT,
+            content_type TEXT,
+            byte_size INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(task_id, kind),
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            plan_code TEXT NOT NULL DEFAULT 'free',
+            status TEXT NOT NULL DEFAULT 'active',
+            provider TEXT,
+            provider_reference TEXT,
+            trial_end TEXT,
+            current_period_start TEXT,
+            current_period_end TEXT,
+            cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+            paused_at TEXT,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS invoices (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            plan_code TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'IDR',
+            status TEXT NOT NULL,
+            provider_reference TEXT,
+            checkout_url TEXT,
+            created_at TEXT NOT NULL,
+            paid_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS payment_events (
+            provider TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            processed_at TEXT NOT NULL,
+            PRIMARY KEY (provider, event_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            task_id TEXT,
+            metric TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            period_key TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         """
     )
     # 2. Backward-compatible migrations: add columns introduced by later features.
@@ -194,6 +273,8 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
         CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
+        CREATE INDEX IF NOT EXISTS idx_assets_user_task ON assets(user_id, task_id);
+        CREATE INDEX IF NOT EXISTS idx_usage_user_period ON usage_events(user_id, period_key, metric);
         """
     )
     conn.commit()
@@ -356,7 +437,7 @@ def get_running_task_count() -> int:
     """Return number of tasks currently running."""
     with _connect() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) FROM tasks WHERE status IN ('downloading', 'subtitles', 'tracking', 'processing', 'cutting')"
+            "SELECT COUNT(*) FROM tasks WHERE status IN ('downloading', 'subtitles', 'tracking', 'processing', 'cutting', 'uploading')"
         ).fetchone()
         return row[0] if row else 0
 
@@ -404,7 +485,7 @@ def reset_stale_tasks() -> int:
             """
             UPDATE tasks
             SET status = 'error', error = 'Server restarted while task was running', updated_at = ?
-            WHERE status IN ('downloading', 'subtitles', 'tracking', 'processing', 'cutting')
+            WHERE status IN ('downloading', 'subtitles', 'tracking', 'processing', 'cutting', 'uploading')
             """,
             (_now(),),
         )
@@ -502,6 +583,46 @@ def create_user(email: str, password: str, name: str = "") -> Optional[User]:
             return get_user_by_id(cur.lastrowid)
         except sqlite3.IntegrityError:
             return None
+
+
+def get_or_create_oauth_user(provider: str, subject: str, email: str, name: str = "", avatar_url: str = "") -> User:
+    """Resolve a social identity or safely create/link a verified-email account."""
+    provider = provider.strip().lower()
+    email = email.strip().lower()
+    if not provider or not subject or not is_valid_email(email):
+        raise ValueError("Identitas social login tidak valid.")
+    now = _now()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM oauth_identities WHERE provider = ? AND provider_subject = ?",
+            (provider, subject),
+        ).fetchone()
+        if row:
+            return get_user_by_id(row["user_id"])
+
+        existing = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            user_id = existing["id"]
+        else:
+            password_hash = _hash_password(secrets.token_urlsafe(32))
+            cur = conn.execute(
+                """
+                INSERT INTO users (email, password_hash, name, is_active, email_verified, avatar_url, created_at, updated_at)
+                VALUES (?, ?, ?, 1, 1, ?, ?, ?)
+                """,
+                (email, password_hash, (name or "").strip(), (avatar_url or "").strip(), now, now),
+            )
+            user_id = cur.lastrowid
+        conn.execute(
+            """
+            INSERT INTO oauth_identities
+                (provider, provider_subject, user_id, provider_email, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (provider, subject, user_id, email, now, now),
+        )
+        conn.commit()
+    return get_user_by_id(user_id)
 
 
 def get_user_by_id(user_id: int) -> Optional[User]:

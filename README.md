@@ -73,6 +73,21 @@ ProjectClipper/
 | Frontend | HTML5 + Vanilla CSS + JS |
 | Real-time | Server-Sent Events (SSE) |
 
+## SaaS P0 Configuration
+
+Seluruh integrasi eksternal bersifat opsional saat development. Salin nilai yang
+dibutuhkan dari `.env.example` ke environment server.
+
+- Social OAuth callback: `<PUBLIC_BASE_URL>/api/auth/social/<provider>/callback`
+- Object storage: isi `S3_*`; mendukung AWS S3, Cloudflare R2, Wasabi, dan MinIO.
+- Midtrans: isi `MIDTRANS_SERVER_KEY`, lalu arahkan notification URL ke
+  `<PUBLIC_BASE_URL>/api/billing/webhook/midtrans`.
+- Production wajib memakai nilai stabil untuk `SECRET_KEY`, `JWT_SECRET_KEY`,
+  dan `DATA_ENCRYPTION_KEY`.
+
+Tanpa konfigurasi `S3_*`, asset tetap disimpan secara lokal. Tanpa konfigurasi
+OAuth atau Midtrans, tombol provider/checkout terkait dinonaktifkan dengan aman.
+
 ## 💡 Tips
 
 - **Stream Copy**: Pemotongan dilakukan tanpa re-encode → sangat cepat, kualitas tetap penuh

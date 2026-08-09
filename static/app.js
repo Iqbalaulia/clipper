@@ -107,6 +107,10 @@ const authForgot      = $('auth-forgot');
 const userBanner      = $('user-banner');
 const userNameEl      = $('user-name');
 const btnLogout       = $('btn-logout');
+const quotaBadge      = $('quota-badge');
+const btnUpgrade      = $('btn-upgrade');
+const socialLogin     = $('social-login');
+const socialLoginButtons = $('social-login-buttons');
 let authMode = 'login'; // 'login' | 'register' | 'forgot' | 'reset' | 'verify'
 
 // ═══════════════════════════════════════════════════════════════════
@@ -147,10 +151,33 @@ function hideAuthOverlay() {
   if (authOverlay) authOverlay.classList.add('hidden');
 }
 
-function updateUserBanner(user) {
+function updateQuota(usage) {
+  if (!usage || !quotaBadge) return;
+  const quota = usage.metrics && usage.metrics.clip_count;
+  if (!quota) return;
+  quotaBadge.textContent = `${usage.plan.toUpperCase()} ${quota.used}/${quota.limit}`;
+  quotaBadge.classList.toggle('warning', quota.remaining > 0 && quota.remaining <= Math.max(1, quota.limit * 0.2));
+  quotaBadge.classList.toggle('exhausted', quota.remaining <= 0);
+  if (quota.remaining <= Math.max(1, quota.limit * 0.2) && btnUpgrade) btnUpgrade.style.display = 'inline-flex';
+}
+
+function updateUserBanner(user, usage) {
   if (!userBanner || !userNameEl) return;
   userNameEl.textContent = user.name || user.email;
   userBanner.style.display = 'flex';
+  updateQuota(usage);
+}
+
+async function loadSocialProviders() {
+  try {
+    const res = await fetch('/api/auth/social/providers');
+    const data = await res.json();
+    if (!data.providers || !data.providers.length || !socialLoginButtons) return;
+    socialLoginButtons.innerHTML = data.providers.map(provider =>
+      `<a class="btn btn-secondary social-btn" href="/api/auth/social/${provider}">MASUK DENGAN ${provider.toUpperCase()}</a>`
+    ).join('');
+    if (socialLogin) socialLogin.style.display = 'block';
+  } catch (e) { /* optional integration */ }
 }
 
 function setAuthMode(mode, message = '') {
@@ -223,7 +250,7 @@ async function checkAuth() {
     const data = await res.json();
     if (data.authenticated && data.user) {
       hideAuthOverlay();
-      updateUserBanner(data.user);
+      updateUserBanner(data.user, data.usage);
       return true;
     }
   } catch (e) {
@@ -364,7 +391,15 @@ if (btnLogout) btnLogout.addEventListener('click', handleLogout);
 window.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
   const verifyToken = params.get('token');
-  if (window.location.pathname === '/verify-email' && verifyToken) {
+  const authErrorParam = params.get('auth_error');
+  if (params.get('auth_status') === 'success') {
+    window.history.replaceState({}, document.title, '/');
+    checkAuth();
+  } else if (authErrorParam) {
+    setAuthMode('login');
+    if (authError) { authError.textContent = authErrorParam; authError.style.display = 'block'; }
+    window.history.replaceState({}, document.title, '/');
+  } else if (window.location.pathname === '/verify-email' && verifyToken) {
     showAuthOverlay();
     handleEmailVerificationToken(verifyToken);
     // clean URL
@@ -375,6 +410,8 @@ window.addEventListener('DOMContentLoaded', () => {
     setAuthMode('reset');
     window.history.replaceState({}, document.title, '/');
   }
+  loadSocialProviders();
+  checkAuth();
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -391,11 +428,56 @@ const profileTimezone   = $('profile-timezone');
 const profileLanguage   = $('profile-language');
 const profileError      = $('profile-error');
 const profileMessage    = $('profile-message');
+const billingCurrentPlan = $('billing-current-plan');
+const billingStatus = $('billing-status');
+const pricingPlans = $('pricing-plans');
+const invoiceList = $('invoice-list');
+const btnSubCancel = $('btn-sub-cancel');
+const btnSubPause = $('btn-sub-pause');
+const btnSubResume = $('btn-sub-resume');
 
 function openProfileModal() {
   if (!profileModal) return;
   profileModal.style.display = 'flex';
   loadProfile();
+  loadBilling();
+}
+
+async function loadBilling() {
+  try {
+    const [plansRes, subRes] = await Promise.all([apiFetch('/api/plans'), apiFetch('/api/subscription')]);
+    const plansData = await plansRes.json();
+    const data = await subRes.json();
+    const sub = data.subscription || {};
+    if (billingCurrentPlan) billingCurrentPlan.textContent = (sub.plan_code || 'free').toUpperCase();
+    if (billingStatus) billingStatus.textContent = (sub.status || 'active').toUpperCase();
+    updateQuota(data.usage);
+    if (pricingPlans) {
+      pricingPlans.innerHTML = (plansData.plans || []).filter(plan => plan.code !== 'free').map(plan => `
+        <div class="pricing-plan">
+          <strong>${plan.name}</strong><span>Rp${Number(plan.price).toLocaleString('id-ID')}/bulan</span>
+          <button type="button" class="btn btn-primary btn-small plan-checkout" data-plan="${plan.code}" ${plansData.billing_configured ? '' : 'disabled'}>PILIH</button>
+        </div>`).join('');
+      pricingPlans.querySelectorAll('.plan-checkout').forEach(button => button.addEventListener('click', () => startCheckout(button.dataset.plan)));
+    }
+    if (invoiceList) invoiceList.innerHTML = (data.invoices || []).map(invoice =>
+      `<div class="invoice-row"><span>${invoice.id}</span><span>${invoice.status.toUpperCase()}</span></div>`
+    ).join('');
+  } catch (e) { /* shown only when modal is used */ }
+}
+
+async function startCheckout(planCode) {
+  const res = await apiFetch('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan_code: planCode }) });
+  const data = await res.json();
+  if (!res.ok) return alert(data.error || 'Checkout gagal.');
+  window.location.assign(data.checkout_url);
+}
+
+async function subscriptionAction(action) {
+  const res = await apiFetch('/api/billing/subscription', { method: 'POST', body: JSON.stringify({ action }) });
+  const data = await res.json();
+  if (!res.ok) return alert(data.error || 'Perubahan subscription gagal.');
+  loadBilling();
 }
 
 function closeProfileModal() {
@@ -452,6 +534,11 @@ async function handleProfileSubmit(e) {
 if (btnProfile) btnProfile.addEventListener('click', openProfileModal);
 if (profileModalClose) profileModalClose.addEventListener('click', closeProfileModal);
 if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
+if (btnUpgrade) btnUpgrade.addEventListener('click', openProfileModal);
+if (quotaBadge) quotaBadge.addEventListener('click', openProfileModal);
+if (btnSubCancel) btnSubCancel.addEventListener('click', () => subscriptionAction('cancel'));
+if (btnSubPause) btnSubPause.addEventListener('click', () => subscriptionAction('pause'));
+if (btnSubResume) btnSubResume.addEventListener('click', () => subscriptionAction('resume'));
 if (profileModal) {
   profileModal.addEventListener('click', (e) => {
     if (e.target === profileModal) closeProfileModal();
@@ -718,7 +805,7 @@ btnClip.addEventListener('click', async () => {
     
     let finalSubType = subtitleType ? subtitleType.value : 'soft';
 
-    const res  = await fetch('/clip', {
+    const res  = await apiFetch('/clip', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
@@ -761,6 +848,7 @@ btnClip.addEventListener('click', async () => {
     const data = await res.json();
 
     if (data.error) {
+      if (data.usage) updateQuota(data.usage);
       showError(data.error);
       setLoading(false);
       showTimelineProgress(false);
@@ -768,6 +856,7 @@ btnClip.addEventListener('click', async () => {
     }
 
     currentTaskId = data.task_id;
+    apiFetch('/api/usage').then(r => r.json()).then(updateQuota).catch(() => {});
     startSSE(currentTaskId);
 
   } catch (err) {
@@ -851,6 +940,7 @@ function handleUpdate(data) {
     cutting:    '✂️  Memotong video...',
     embedding:  '🔡 Menyisipkan subtitle...',
     processing: '⚙️  Memproses video...',
+    uploading:  '☁️  Mengunggah hasil...',
     done:       '✅ Selesai!',
     error:      '❌ Error',
     cancelling: '⏹️ Membatalkan...',
@@ -881,7 +971,7 @@ function handleUpdate(data) {
   if (data.status === 'done' && data.file) {
     evtSource.close();
     setLoading(false);
-    showDownload(data.file);
+    showDownload(data.file, data.download_url || data.clip_url);
     showTimelineProgress(false);
 
     // Fetch extended metadata (virality score + thumbnail) for single clip
@@ -901,8 +991,8 @@ function handleUpdate(data) {
             scoreEl.textContent = meta.virality_score;
           }
           if (meta.virality_reason && reasonEl) reasonEl.textContent = meta.virality_reason;
-          if (meta.thumbnail_file && thumbEl) {
-            thumbEl.src = `/download-thumb/${meta.thumbnail_file}`;
+          if ((meta.thumbnail_url || meta.thumbnail_file) && thumbEl) {
+            thumbEl.src = meta.thumbnail_url || `/download-thumb/${meta.thumbnail_file}`;
             thumbEl.style.display = 'block';
           }
         })
@@ -954,8 +1044,8 @@ function setLoading(loading) {
   btnClip.classList.toggle('loading', loading);
 }
 
-function showDownload(filename) {
-  const fileUrl = `/download/${filename}`;
+function showDownload(filename, signedUrl = '') {
+  const fileUrl = signedUrl || `/download/${filename}`;
   if (downloadLink) downloadLink.href = fileUrl;
   if (downloadLinkPanel) downloadLinkPanel.href = fileUrl;
   if (downloadName) downloadName.textContent = filename;
@@ -1117,8 +1207,8 @@ function showWorkspaceGallery(tasks) {
   }
   
   successTasks.forEach(t => {
-    const fileUrl = `/download/${t.output_file}`;
-    const thumbUrl = t.thumbnail_file ? `/download-thumb/${t.thumbnail_file}` : '';
+    const fileUrl = t.download_url || t.clip_url || `/download/${t.output_file}`;
+    const thumbUrl = t.thumbnail_url || (t.thumbnail_file ? `/download-thumb/${t.thumbnail_file}` : '');
     const score = t.virality_score != null ? t.virality_score : null;
     const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low';
     const card = document.createElement('div');
@@ -1214,7 +1304,7 @@ async function triggerVideoInfoFetch(url) {
   if (emptyIcon) emptyIcon.style.animationDuration = '1s';
   
   try {
-    const res = await fetch('/video-info', {
+    const res = await apiFetch('/video-info', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
@@ -1359,7 +1449,7 @@ if (btnGenerateHook) {
     try {
       const cookies = $('manual-cookies-toggle') ? $('manual-cookies-toggle').checked : false;
 
-      const res = await fetch('/generate-hook', {
+      const res = await apiFetch('/generate-hook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, language }),
@@ -1467,7 +1557,7 @@ btnGenerateAi.addEventListener('click', async () => {
   const cookies = $('manual-cookies-toggle') ? $('manual-cookies-toggle').checked : false;
 
   try {
-    const res = await fetch('/generate-copy', {
+    const res = await apiFetch('/generate-copy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, language }),
@@ -1741,7 +1831,7 @@ if (btnScan) {
 
     try {
       const subtitleLangVal = $('ctrl-subtitle-lang') ? $('ctrl-subtitle-lang').value : 'id,en';
-      const res  = await fetch('/detect-moments', {
+      const res  = await apiFetch('/detect-moments', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ url, api_key: apiKey, num_moments: numMoments, cookies, subtitle_lang: subtitleLangVal }),
@@ -1898,7 +1988,7 @@ if (btnClipMoments) {
     showWorkspaceProcessing();
 
     try {
-      const res = await fetch('/clip-moments', {
+      const res = await apiFetch('/clip-moments', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -1997,7 +2087,7 @@ function startBatchPolling() {
   batchPollInterval = setInterval(async () => {
     const taskIds = batchTaskList.map(t => t.task_id);
     try {
-      const res  = await fetch('/batch-progress', {
+      const res  = await apiFetch('/batch-progress', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ task_ids: taskIds }),
@@ -2036,6 +2126,9 @@ function startBatchPolling() {
         if (st.virality_score !== undefined) t.virality_score = st.virality_score;
         if (st.virality_reason !== undefined) t.virality_reason = st.virality_reason;
         if (st.thumbnail_file !== undefined) t.thumbnail_file = st.thumbnail_file;
+        if (st.download_url) t.download_url = st.download_url;
+        if (st.clip_url) t.clip_url = st.clip_url;
+        if (st.thumbnail_url) t.thumbnail_url = st.thumbnail_url;
         if (st.moment_index !== undefined) t.moment_index = st.moment_index;
       });
 
@@ -2074,8 +2167,8 @@ function renderBatchGallery(tasks) {
   }
 
   successTasks.forEach(t => {
-    const fileUrl = `/download/${t.output_file}`;
-    const thumbUrl = t.thumbnail_file ? `/download-thumb/${t.thumbnail_file}` : '';
+    const fileUrl = t.download_url || t.clip_url || `/download/${t.output_file}`;
+    const thumbUrl = t.thumbnail_url || (t.thumbnail_file ? `/download-thumb/${t.thumbnail_file}` : '');
     const score = t.virality_score != null ? t.virality_score : null;
     const scoreClass = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low';
     const card = document.createElement('div');
@@ -2219,8 +2312,8 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex, t
         if (meta.virality_reason && modalMetaReason) {
           modalMetaReason.textContent = meta.virality_reason;
         }
-        if (meta.thumbnail_file && modalMetaThumb) {
-          modalMetaThumb.src = `/download-thumb/${meta.thumbnail_file}`;
+        if ((meta.thumbnail_url || meta.thumbnail_file) && modalMetaThumb) {
+          modalMetaThumb.src = meta.thumbnail_url || `/download-thumb/${meta.thumbnail_file}`;
           modalMetaThumb.style.display = 'block';
         }
       }
@@ -2259,7 +2352,7 @@ window.openClipDetailsModal = async function(fileUrl, start, end, momentIndex, t
   }
 
   try {
-    const res = await fetch('/generate-copy', {
+    const res = await apiFetch('/generate-copy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, api_key: apiKey, start, end, cookies, clip_title: clipTitle, clip_context: clipContext, language }),

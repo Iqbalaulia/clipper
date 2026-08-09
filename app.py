@@ -24,6 +24,8 @@ from flask import (
     send_from_directory,
     Response,
     stream_with_context,
+    redirect,
+    url_for,
 )
 from flask_jwt_extended import (
     JWTManager,
@@ -40,6 +42,10 @@ import clipper
 import models
 import task_queue
 import secure_store
+import billing
+import cloud_storage
+import saas
+import social_auth
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
@@ -231,14 +237,28 @@ def _resolve_api_key(data: dict) -> str:
 
 
 def _quota_error(requested_tasks: int = 1):
-    since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-    used = models.count_user_tasks_since(_current_user_id(), since)
-    if used + requested_tasks <= FREE_TASKS_PER_DAY:
+    summary = saas.usage_summary(_current_user_id())
+    quota = summary["metrics"]["clip_count"]
+    if quota["used"] + requested_tasks <= quota["limit"]:
         return None
-    return jsonify({
-        "error": f"Kuota gratis {FREE_TASKS_PER_DAY} task per 24 jam telah habis.",
-        "quota": {"limit": FREE_TASKS_PER_DAY, "used": used, "remaining": max(0, FREE_TASKS_PER_DAY - used)},
-    }), 429
+    return jsonify({"error": "Kuota clip bulan ini telah habis.", "usage": summary}), 429
+
+
+def _rate_limit(scope: str, limit: int, window_seconds: int = 60):
+    if app.config.get("TESTING"):
+        return None
+    identity = _current_user_id() or request.remote_addr or "anonymous"
+    allowed, retry_after = saas.check_rate_limit(f"{scope}:{identity}", limit, window_seconds)
+    if allowed:
+        return None
+    response = jsonify({"error": "Terlalu banyak permintaan. Silakan coba lagi.", "retry_after": retry_after})
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
+def _asset_payload(task):
+    return cloud_storage.asset_urls(task["id"], task["user_id"]) if task else {}
 
 
 # ── Routes ──────────────────────────────────────────────────────────────────
@@ -275,6 +295,9 @@ def _set_auth_cookies(response, user_id: int):
 
 @app.route("/api/auth/register", methods=["POST"])
 def register():
+    limited = _rate_limit("register", 5, 3600)
+    if limited:
+        return limited
     data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip()
     password = data.get("password") or ""
@@ -309,6 +332,9 @@ def register():
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
+    limited = _rate_limit("login", 10, 300)
+    if limited:
+        return limited
     data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip()
     password = data.get("password") or ""
@@ -369,12 +395,54 @@ def me():
                 "language": user.language,
             },
             "email_verification_required": app.config["EMAIL_VERIFICATION_REQUIRED"],
+            "usage": saas.usage_summary(user.id),
+            "subscription": saas.get_subscription(user.id),
+            "social_providers": social_auth.configured_providers(),
         })
     return jsonify({"authenticated": False, "user": None})
 
 
+@app.route("/api/auth/social/providers")
+def social_providers():
+    return jsonify({"providers": social_auth.configured_providers()})
+
+
+@app.route("/api/auth/social/<provider>")
+def social_login(provider):
+    try:
+        callback = url_for("social_callback", provider=provider, _external=True)
+        return redirect(social_auth.authorization_url(provider, callback, app.config["SECRET_KEY"]))
+    except ValueError as exc:
+        return redirect("/?auth_error=" + requests.utils.quote(str(exc)))
+
+
+@app.route("/api/auth/social/<provider>/callback", methods=["GET", "POST"])
+def social_callback(provider):
+    try:
+        code = request.values.get("code", "")
+        state = request.values.get("state", "")
+        callback = url_for("social_callback", provider=provider, _external=True)
+        identity = social_auth.exchange_identity(provider, code, state, callback, app.config["SECRET_KEY"])
+        if not identity.get("email_verified"):
+            raise ValueError("Email social login belum terverifikasi.")
+        user = models.get_or_create_oauth_user(
+            provider, identity["subject"], identity["email"], identity.get("name", ""), identity.get("avatar_url", "")
+        )
+        if not user.is_active:
+            raise ValueError("Akun tidak aktif.")
+        response = redirect("/?auth_status=success")
+        _set_auth_cookies(response, user.id)
+        return response
+    except Exception as exc:
+        logger.warning("Social login %s failed: %s", provider, exc)
+        return redirect("/?auth_error=" + requests.utils.quote(str(exc)))
+
+
 @app.route("/api/auth/forgot-password", methods=["POST"])
 def forgot_password():
+    limited = _rate_limit("forgot-password", 5, 3600)
+    if limited:
+        return limited
     data = request.get_json(force=True) or {}
     email = (data.get("email") or "").strip()
     if not email:
@@ -545,6 +613,9 @@ def check_deps():
 def video_info():
     """Fetch video metadata (thumbnail, title, duration, channel) without downloading."""
     data = request.get_json(force=True)
+    limited = _rate_limit("video-info", 20, 3600)
+    if limited:
+        return limited
     url = (data.get("url") or "").strip()
 
     if not url:
@@ -599,6 +670,9 @@ def video_info():
 @login_required
 def clip():
     """Start a clip task. Returns task_id immediately."""
+    limited = _rate_limit("clip", 10, 3600)
+    if limited:
+        return limited
     data = request.get_json(force=True)
 
     url   = (data.get("url")   or "").strip()
@@ -673,6 +747,10 @@ def clip():
         return jsonify({"error": "Ruang disk tidak mencukupi. Silakan kosongkan minimal 500 MB."}), 507
 
     task_id = str(uuid.uuid4())
+    try:
+        saas.consume_task_usage(user_id, task_id, start, end)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "usage": saas.usage_summary(user_id)}), 429
     kwargs = {
         "subtitle_enabled": subtitle_enabled,
         "subtitle_lang": subtitle_lang,
@@ -760,6 +838,7 @@ def progress(task_id: str):
                 "file":     task["output_file"],
                 "error":    task["error"],
             }
+            payload.update(_asset_payload(task))
             yield _sse(payload)
 
             if task["status"] in ("done", "error", "cancelled"):
@@ -778,6 +857,10 @@ def download(filename: str):
     task = models.get_task_by_output_file(filename, user_id=_current_user_id())
     if task is None:
         return jsonify({"error": "File tidak ditemukan atau bukan milik Anda."}), 404
+    asset = cloud_storage.get_asset_by_filename(filename, _current_user_id(), "clip")
+    signed = cloud_storage.signed_url(asset, download=True)
+    if signed:
+        return redirect(signed)
     return send_from_directory(get_user_output_dir(_current_user_id()), filename, as_attachment=True)
 
 
@@ -788,6 +871,10 @@ def download_thumb(filename: str):
     task = models.get_task_by_thumbnail_file(filename, user_id=_current_user_id())
     if task is None:
         return jsonify({"error": "File tidak ditemukan atau bukan milik Anda."}), 404
+    asset = cloud_storage.get_asset_by_filename(filename, _current_user_id(), "thumbnail")
+    signed = cloud_storage.signed_url(asset)
+    if signed:
+        return redirect(signed)
     return send_from_directory(get_user_output_dir(_current_user_id()), filename, as_attachment=True)
 
 
@@ -798,7 +885,7 @@ def task_meta(task_id: str):
     task = clipper.get_task(task_id, user_id=_current_user_id())
     if task is None:
         return jsonify({"error": "Task tidak ditemukan atau bukan milik Anda."}), 404
-    return jsonify({
+    payload = {
         "task_id": task["id"],
         "status": task["status"],
         "output_file": task["output_file"],
@@ -806,7 +893,9 @@ def task_meta(task_id: str):
         "virality_reason": task.get("virality_reason"),
         "thumbnail_file": task.get("thumbnail_file"),
         "moment_index": task.get("moment_index", 0),
-    })
+    }
+    payload.update(_asset_payload(task))
+    return jsonify(payload)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -942,6 +1031,9 @@ def _call_gemini(api_key: str, messages: list, response_json: bool = False,
 def generate_hook():
     """Meminta AI (Gemini) untuk membuat hook title singkat berdasarkan video."""
     data = request.get_json(force=True)
+    limited = _rate_limit("generate-hook", 20, 3600)
+    if limited:
+        return limited
     url = data.get("url")
     api_key = _resolve_api_key(data)
     start_time = data.get("start", "")
@@ -949,6 +1041,10 @@ def generate_hook():
 
     if not url or not api_key:
         return jsonify({"error": "URL dan API Key wajib diisi"}), 400
+    try:
+        saas.consume_usage(_current_user_id(), "ai_copy", 1, f"hook:{uuid.uuid4().hex}")
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "usage": saas.usage_summary(_current_user_id())}), 429
 
     try:
         # 1. Ekstrak metadata video dengan yt-dlp
@@ -1031,6 +1127,9 @@ BALAS HANYA dengan teks hook final saja (tanpa penjelasan, tanpa nomor, tanpa ta
 def generate_copy():
     """Meminta AI (Gemini) untuk membuat copywriting berdasarkan deskripsi & waktu video."""
     data = request.get_json(force=True)
+    limited = _rate_limit("generate-copy", 30, 3600)
+    if limited:
+        return limited
     url = data.get("url")
     api_key = _resolve_api_key(data)
     start_time = data.get("start", "")
@@ -1043,6 +1142,10 @@ def generate_copy():
 
     if not url or not api_key:
         return jsonify({"error": "URL dan API Key wajib diisi"}), 400
+    try:
+        saas.consume_usage(_current_user_id(), "ai_copy", 1, f"copy:{uuid.uuid4().hex}")
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "usage": saas.usage_summary(_current_user_id())}), 429
 
     try:
         if clip_title and clip_context:
@@ -1209,6 +1312,9 @@ def srt_timestamp_to_seconds(ts):
 @login_required
 def detect_moments():
     data = request.get_json(force=True)
+    limited = _rate_limit("detect-moments", 10, 3600)
+    if limited:
+        return limited
     url = (data.get("url") or "").strip()
     api_key = _resolve_api_key(data)
     num_moments = int(data.get("num_moments") or 4)
@@ -1218,6 +1324,10 @@ def detect_moments():
 
     if not url: return jsonify({"error": "URL video wajib diisi."}), 400
     if not api_key: return jsonify({"error": "Gemini API Key wajib diisi."}), 400
+    try:
+        saas.consume_usage(_current_user_id(), "ai_scan", 1, f"scan:{uuid.uuid4().hex}")
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "usage": saas.usage_summary(_current_user_id())}), 429
 
     try:
         # ── Step 1: Ambil metadata video ────────────────────────────────
@@ -1426,6 +1536,9 @@ PENTING: Jika tidak yakin dengan timestamp akurat, preferensi berikan batas awal
 @app.route("/clip-moments", methods=["POST"])
 @login_required
 def clip_moments():
+    limited = _rate_limit("clip-moments", 5, 3600)
+    if limited:
+        return limited
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
     moments = data.get("moments") or []
@@ -1477,14 +1590,29 @@ def clip_moments():
     if output_quality not in _valid_quality:
         output_quality = "standard"
 
-    task_list = []
+    prepared_tasks = []
     for idx, moment in enumerate(moments, start=1):
         start = str(moment.get("start", "00:00:00"))
         end   = str(moment.get("end",   "00:01:00"))
         title = str(moment.get("title", ""))
         moment_index = int(moment.get("index", idx))
-        
         task_id = str(uuid.uuid4())
+        prepared_tasks.append({
+            "task_id": task_id, "start": start, "end": end, "title": title,
+            "moment_index": moment_index, "source_index": moment.get("index", 0),
+        })
+    try:
+        saas.consume_batch_task_usage(user_id, prepared_tasks)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "usage": saas.usage_summary(user_id)}), 429
+
+    task_list = []
+    for prepared in prepared_tasks:
+        task_id = prepared["task_id"]
+        start = prepared["start"]
+        end = prepared["end"]
+        title = prepared["title"]
+        moment_index = prepared["moment_index"]
         kwargs = {
             "subtitle_enabled": subtitle_enabled,
             "subtitle_lang": subtitle_lang,
@@ -1522,7 +1650,7 @@ def clip_moments():
         task_queue.submit_task(task_id, url, start, end, user_output_dir, kwargs, user_id=user_id)
         task_list.append({
             "task_id": task_id,
-            "moment_index": moment.get("index", 0),
+            "moment_index": prepared["source_index"],
             "title": title,
             "start": start,
             "end": end
@@ -1550,7 +1678,60 @@ def batch_progress():
                 "thumbnail_file": t.get("thumbnail_file"),
                 "moment_index": t.get("moment_index", 0),
             }
+            result[tid].update(_asset_payload(t))
     return jsonify({"tasks": result})
+
+
+@app.route("/api/plans")
+def plans():
+    return jsonify({"plans": saas.public_plans(), "billing_configured": billing.configured()})
+
+
+@app.route("/api/usage")
+@login_required
+def usage():
+    return jsonify(saas.usage_summary(_current_user_id()))
+
+
+@app.route("/api/subscription")
+@login_required
+def subscription():
+    return jsonify({
+        "subscription": saas.get_subscription(_current_user_id()),
+        "usage": saas.usage_summary(_current_user_id()),
+        "invoices": billing.list_invoices(_current_user_id()),
+    })
+
+
+@app.route("/api/billing/checkout", methods=["POST"])
+@login_required
+def billing_checkout():
+    limited = _rate_limit("billing-checkout", 5, 3600)
+    if limited:
+        return limited
+    try:
+        result = billing.create_checkout(current_user._user, (request.get_json(force=True) or {}).get("plan_code", ""))
+        return jsonify(result)
+    except (ValueError, RuntimeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/billing/subscription", methods=["POST"])
+@login_required
+def billing_subscription_action():
+    try:
+        action = (request.get_json(force=True) or {}).get("action", "")
+        return jsonify({"subscription": saas.change_subscription(_current_user_id(), action)})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/billing/webhook/midtrans", methods=["POST"])
+def midtrans_webhook():
+    try:
+        return jsonify(billing.process_webhook(request.get_json(force=True) or {}))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────

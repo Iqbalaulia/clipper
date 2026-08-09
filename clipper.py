@@ -15,6 +15,7 @@ import models
 import runner
 import virality
 import thumbnail
+import cloud_storage
 
 # Global lock to prevent multiple yt-dlp instances from downloading the same video concurrently
 DOWNLOAD_LOCK = threading.Lock()
@@ -1598,18 +1599,23 @@ def run_clip(
             if thumb_file:
                 _append_log(task_id, f"[THUMBNAIL] Thumbnail tersimpan: {thumb_file}")
 
+            _update_task(task_id, status="uploading", progress=97)
+            thumbnail_path = os.path.join(output_dir, thumb_file) if thumb_file else None
+            cloud_storage.persist_task_assets(task_id, output_path, thumbnail_path)
             _update_task(
-                task_id,
-                status="done",
-                progress=100,
-                output_file=output_filename,
-                virality_score=score_info["score"],
-                virality_reason=score_info["reason"],
+                task_id, status="done", progress=100, output_file=output_filename,
+                virality_score=score_info["score"], virality_reason=score_info["reason"],
                 thumbnail_file=thumb_file,
             )
         except Exception as meta_err:
-            _append_log(task_id, f"[VIRALITY] Gagal menghitung metadata: {meta_err}")
-            _update_task(task_id, status="done", progress=100, output_file=output_filename)
+            _append_log(task_id, f"[VIRALITY/STORAGE] Gagal menyimpan metadata: {meta_err}")
+            if os.path.isfile(output_path):
+                try:
+                    _update_task(task_id, status="uploading", progress=97)
+                    cloud_storage.persist_task_assets(task_id, output_path)
+                    _update_task(task_id, status="done", progress=100, output_file=output_filename)
+                except Exception as storage_err:
+                    raise RuntimeError(f"Upload cloud gagal: {storage_err}") from storage_err
 
         # ── Step 5: Cleanup ──────────────────────────────────────────────────
         # Delete ONLY task-specific temp files. The video cache (_cache_{video_id}.mp4)

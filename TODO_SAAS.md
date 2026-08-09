@@ -21,7 +21,7 @@ Dokumen ini merinci fitur-fitur yang perlu dibangun untuk mengubah **Video Clipp
 
 ### Authentication & User Management
 - [x] Implementasi register/login dengan email + password
-- [ ] Login sosial (Google, GitHub, Apple)
+- [x] Login sosial (Google, GitHub, Apple)
 - [x] JWT/session management aman (httpOnly cookie / access + refresh token)
 - [x] Forgot password & email verification
 - [x] User profile (nama, avatar, timezone, bahasa)
@@ -36,26 +36,26 @@ Dokumen ini merinci fitur-fitur yang perlu dibangun untuk mengubah **Video Clipp
 - [x] Default quota per user (free tier)
 
 ### Cloud Storage & CDN
-- [ ] Upload hasil clip ke cloud storage (S3 / R2 / Wasabi / MinIO)
-- [ ] Generate signed download URL dengan expiry
-- [ ] Thumbnail & preview clip via CDN
-- [ ] Auto-cleanup file lokal setelah upload sukses
-- [ ] Backup metadata clip ke database
+- [x] Upload hasil clip ke cloud storage (S3 / R2 / Wasabi / MinIO)
+- [x] Generate signed download URL dengan expiry
+- [x] Thumbnail & preview clip via CDN
+- [x] Auto-cleanup file lokal setelah upload sukses
+- [x] Backup metadata clip ke database
 
 ### Billing & Subscriptions
-- [ ] Definisi pricing plan (Free / Pro / Team / Agency)
-- [ ] Integrasi payment gateway (Stripe / Midtrans / Xendit)
-- [ ] Webhook untuk status pembayaran & subscription
-- [ ] Invoice & receipt otomatis
-- [ ] Trial period & downgrade handling
-- [ ] Cancel / pause subscription
+- [x] Definisi pricing plan (Free / Pro / Team / Agency)
+- [x] Integrasi payment gateway (Stripe / Midtrans / Xendit)
+- [x] Webhook untuk status pembayaran & subscription
+- [x] Invoice & receipt otomatis
+- [x] Trial period & downgrade handling
+- [x] Cancel / pause subscription
 
 ### Quota & Rate Limiting
-- [ ] Tracking usage: menit render, jumlah clip, scan AI, copy AI
-- [ ] Quota reset bulanan otomatis
-- [ ] Rate limit per endpoint per user
-- [ ] Block / queue task saat quota habis
-- [ ] Upgrade prompt di UI saat quota hampir habis
+- [x] Tracking usage: menit render, jumlah clip, scan AI, copy AI
+- [x] Quota reset bulanan otomatis
+- [x] Rate limit per endpoint per user
+- [x] Block / queue task saat quota habis
+- [x] Upgrade prompt di UI saat quota hampir habis
 
 ---
 
