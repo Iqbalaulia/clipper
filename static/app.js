@@ -81,6 +81,383 @@ const subBorderStyle  = $('sub-border-style');
 const subOutlineWidth = $('sub-outline-width');
 const subShadowVal    = $('sub-shadow-val');
 
+// ── Auth refs
+const authOverlay     = $('auth-overlay');
+const authForm        = $('auth-form');
+const authSubtitle    = $('auth-subtitle');
+const authNameGroup   = $('auth-name-group');
+const authPassword2Group = $('auth-password2-group');
+const authEmailGroup  = $('auth-email-group');
+const authPasswordGroup = $('auth-password-group');
+const authResetPasswordGroup = $('auth-reset-password-group');
+const authResetPassword2Group = $('auth-reset-password2-group');
+const authName        = $('auth-name');
+const authEmail       = $('auth-email');
+const authPassword    = $('auth-password');
+const authPassword2   = $('auth-password2');
+const authResetPassword = $('auth-reset-password');
+const authResetPassword2 = $('auth-reset-password2');
+const authToken       = $('auth-token');
+const authSubmit      = $('auth-submit');
+const authError       = $('auth-error');
+const authMessage     = $('auth-message');
+const authModeText    = $('auth-mode-text');
+const authToggle      = $('auth-toggle');
+const authForgot      = $('auth-forgot');
+const userBanner      = $('user-banner');
+const userNameEl      = $('user-name');
+const btnLogout       = $('btn-logout');
+let authMode = 'login'; // 'login' | 'register' | 'forgot' | 'reset' | 'verify'
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTHENTICATION
+// ═══════════════════════════════════════════════════════════════════
+
+async function apiFetch(url, options = {}, retry = true) {
+  options.credentials = 'same-origin';
+  options.headers = options.headers || {};
+  if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+    options.headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetch(url, options);
+  if (res.status === 401 && retry) {
+    // Try to refresh the access token using the httpOnly refresh cookie.
+    try {
+      const refreshRes = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+      if (refreshRes.ok) {
+        return apiFetch(url, options, false);
+      }
+    } catch (e) {
+      // ignore, show overlay below
+    }
+    showAuthOverlay();
+    throw new Error('Sesi habis. Silakan masuk kembali.');
+  }
+  return res;
+}
+
+function showAuthOverlay() {
+  if (authOverlay) authOverlay.classList.remove('hidden');
+}
+
+function hideAuthOverlay() {
+  if (authOverlay) authOverlay.classList.add('hidden');
+}
+
+function updateUserBanner(user) {
+  if (!userBanner || !userNameEl) return;
+  userNameEl.textContent = user.name || user.email;
+  userBanner.style.display = 'flex';
+}
+
+function setAuthMode(mode, message = '') {
+  authMode = mode;
+  authError.style.display = 'none';
+  authMessage.style.display = 'none';
+
+  // Reset fields
+  if (authPassword) authPassword.value = '';
+  if (authPassword2) authPassword2.value = '';
+  if (authResetPassword) authResetPassword.value = '';
+  if (authResetPassword2) authResetPassword2.value = '';
+
+  // Default visibility
+  if (authNameGroup) authNameGroup.style.display = 'none';
+  if (authPassword2Group) authPassword2Group.style.display = 'none';
+  if (authEmailGroup) authEmailGroup.style.display = 'block';
+  if (authPasswordGroup) authPasswordGroup.style.display = 'block';
+  if (authResetPasswordGroup) authResetPasswordGroup.style.display = 'none';
+  if (authResetPassword2Group) authResetPassword2Group.style.display = 'none';
+  if (authForgot) authForgot.style.display = 'none';
+
+  if (mode === 'register') {
+    if (authNameGroup) authNameGroup.style.display = 'block';
+    if (authPassword2Group) authPassword2Group.style.display = 'block';
+    if (authSubmit) authSubmit.textContent = 'DAFTAR';
+    if (authModeText) authModeText.textContent = 'Sudah punya akun?';
+    if (authToggle) authToggle.textContent = 'Masuk';
+    if (authSubtitle) authSubtitle.textContent = 'Buat akun gratis untuk mulai membuat klip.';
+  } else if (mode === 'forgot') {
+    if (authPasswordGroup) authPasswordGroup.style.display = 'none';
+    if (authSubmit) authSubmit.textContent = 'KIRIM LINK RESET';
+    if (authModeText) authModeText.textContent = 'Kembali ke';
+    if (authToggle) authToggle.textContent = 'Masuk';
+    if (authSubtitle) authSubtitle.textContent = 'Masukkan email Anda untuk menerima link reset password.';
+  } else if (mode === 'reset') {
+    if (authEmailGroup) authEmailGroup.style.display = 'none';
+    if (authPasswordGroup) authPasswordGroup.style.display = 'none';
+    if (authResetPasswordGroup) authResetPasswordGroup.style.display = 'block';
+    if (authResetPassword2Group) authResetPassword2Group.style.display = 'block';
+    if (authSubmit) authSubmit.textContent = 'UBAH PASSWORD';
+    if (authModeText) authModeText.textContent = 'Kembali ke';
+    if (authToggle) authToggle.textContent = 'Masuk';
+    if (authSubtitle) authSubtitle.textContent = 'Masukkan password baru Anda.';
+  } else if (mode === 'verify') {
+    if (authEmailGroup) authEmailGroup.style.display = 'block';
+    if (authPasswordGroup) authPasswordGroup.style.display = 'none';
+    if (authSubmit) authSubmit.textContent = 'KIRIM ULANG EMAIL';
+    if (authModeText) authModeText.textContent = 'Sudah punya akun?';
+    if (authToggle) authToggle.textContent = 'Masuk';
+    if (authSubtitle) authSubtitle.textContent = 'Verifikasi email Anda untuk melanjutkan.';
+  } else {
+    // login
+    if (authForgot) authForgot.style.display = 'inline-block';
+    if (authSubmit) authSubmit.textContent = 'MASUK';
+    if (authModeText) authModeText.textContent = 'Belum punya akun?';
+    if (authToggle) authToggle.textContent = 'Daftar';
+    if (authSubtitle) authSubtitle.textContent = 'Masuk atau daftar untuk mulai membuat klip.';
+  }
+
+  if (message && authMessage) {
+    authMessage.textContent = message;
+    authMessage.style.display = 'block';
+  }
+}
+
+async function checkAuth() {
+  try {
+    const res = await apiFetch('/api/auth/me');
+    const data = await res.json();
+    if (data.authenticated && data.user) {
+      hideAuthOverlay();
+      updateUserBanner(data.user);
+      return true;
+    }
+  } catch (e) {
+    // ignore, show overlay below
+  }
+  showAuthOverlay();
+  return false;
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  if (authError) authError.style.display = 'none';
+  if (authMessage) authMessage.style.display = 'none';
+
+  const email = authEmail ? authEmail.value.trim() : '';
+  const password = authPassword ? authPassword.value : '';
+  const payload = {};
+  let url = '/api/auth/login';
+
+  if (authMode === 'register') {
+    const name = authName ? authName.value.trim() : '';
+    const password2 = authPassword2 ? authPassword2.value : '';
+    if (!name) {
+      if (authError) { authError.textContent = 'Nama wajib diisi.'; authError.style.display = 'block'; }
+      return;
+    }
+    if (password !== password2) {
+      if (authError) { authError.textContent = 'Password dan konfirmasi tidak cocok.'; authError.style.display = 'block'; }
+      return;
+    }
+    payload.email = email;
+    payload.password = password;
+    payload.name = name;
+    url = '/api/auth/register';
+  } else if (authMode === 'forgot') {
+    if (!email) {
+      if (authError) { authError.textContent = 'Email wajib diisi.'; authError.style.display = 'block'; }
+      return;
+    }
+    payload.email = email;
+    url = '/api/auth/forgot-password';
+  } else if (authMode === 'reset') {
+    const newPassword = authResetPassword ? authResetPassword.value : '';
+    const newPassword2 = authResetPassword2 ? authResetPassword2.value : '';
+    const token = authToken ? authToken.value : '';
+    if (!token) {
+      if (authError) { authError.textContent = 'Token reset tidak valid.'; authError.style.display = 'block'; }
+      return;
+    }
+    if (newPassword !== newPassword2) {
+      if (authError) { authError.textContent = 'Password baru dan konfirmasi tidak cocok.'; authError.style.display = 'block'; }
+      return;
+    }
+    payload.token = token;
+    payload.password = newPassword;
+    url = '/api/auth/reset-password';
+  } else if (authMode === 'verify') {
+    if (!email) {
+      if (authError) { authError.textContent = 'Email wajib diisi.'; authError.style.display = 'block'; }
+      return;
+    }
+    payload.email = email;
+    url = '/api/auth/resend-verification';
+  } else {
+    // login
+    payload.email = email;
+    payload.password = password;
+    url = '/api/auth/login';
+  }
+
+  try {
+    const res = await apiFetch(url, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (authError) { authError.textContent = data.error || 'Terjadi kesalahan.'; authError.style.display = 'block'; }
+      return;
+    }
+
+    if (authMode === 'register') {
+      if (data.email_verification_required && !data.user.email_verified) {
+        setAuthMode('verify', 'Pendaftaran berhasil! Silakan verifikasi email Anda sebelum masuk.');
+        return;
+      }
+      hideAuthOverlay();
+      updateUserBanner(data.user);
+    } else if (authMode === 'forgot' || authMode === 'reset' || authMode === 'verify') {
+      if (authMessage) { authMessage.textContent = data.message || 'Berhasil.'; authMessage.style.display = 'block'; }
+      if (authMode === 'reset') {
+        setTimeout(() => setAuthMode('login'), 2000);
+      }
+    } else {
+      hideAuthOverlay();
+      updateUserBanner(data.user);
+    }
+  } catch (e) {
+    if (authError) { authError.textContent = e.message || 'Terjadi kesalahan.'; authError.style.display = 'block'; }
+  }
+}
+
+async function handleLogout() {
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+  } catch (e) {
+    // ignore
+  }
+  window.location.reload();
+}
+
+async function handleEmailVerificationToken(token) {
+  try {
+    const res = await apiFetch('/api/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setAuthMode('login', 'Email berhasil diverifikasi. Silakan masuk.');
+    } else {
+      setAuthMode('login', data.error || 'Token verifikasi tidak valid.');
+    }
+  } catch (e) {
+    setAuthMode('login', 'Gagal memverifikasi email.');
+  }
+}
+
+if (authForm) authForm.addEventListener('submit', handleAuthSubmit);
+if (authToggle) authToggle.addEventListener('click', () => {
+  if (authMode === 'login') setAuthMode('register');
+  else setAuthMode('login');
+});
+if (authForgot) authForgot.addEventListener('click', () => setAuthMode('forgot'));
+if (btnLogout) btnLogout.addEventListener('click', handleLogout);
+
+// Handle verify-email / reset-password links on page load.
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const verifyToken = params.get('token');
+  if (window.location.pathname === '/verify-email' && verifyToken) {
+    showAuthOverlay();
+    handleEmailVerificationToken(verifyToken);
+    // clean URL
+    window.history.replaceState({}, document.title, '/');
+  } else if (window.location.pathname === '/reset-password' && verifyToken) {
+    showAuthOverlay();
+    if (authToken) authToken.value = verifyToken;
+    setAuthMode('reset');
+    window.history.replaceState({}, document.title, '/');
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// PROFILE MODAL
+// ═══════════════════════════════════════════════════════════════════
+
+const profileModal      = $('profile-modal');
+const profileModalClose = $('profile-modal-close');
+const btnProfile        = $('btn-profile');
+const profileForm       = $('profile-form');
+const profileName       = $('profile-name');
+const profileAvatar     = $('profile-avatar');
+const profileTimezone   = $('profile-timezone');
+const profileLanguage   = $('profile-language');
+const profileError      = $('profile-error');
+const profileMessage    = $('profile-message');
+
+function openProfileModal() {
+  if (!profileModal) return;
+  profileModal.style.display = 'flex';
+  loadProfile();
+}
+
+function closeProfileModal() {
+  if (!profileModal) return;
+  profileModal.style.display = 'none';
+}
+
+async function loadProfile() {
+  try {
+    const res = await apiFetch('/api/auth/profile');
+    const data = await res.json();
+    if (res.ok && data.user) {
+      if (profileName) profileName.value = data.user.name || '';
+      if (profileAvatar) profileAvatar.value = data.user.avatar_url || '';
+      if (profileTimezone) profileTimezone.value = data.user.timezone || 'UTC';
+      if (profileLanguage) profileLanguage.value = data.user.language || 'id';
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function handleProfileSubmit(e) {
+  e.preventDefault();
+  if (profileError) profileError.style.display = 'none';
+  if (profileMessage) profileMessage.style.display = 'none';
+
+  const payload = {
+    name: profileName ? profileName.value.trim() : '',
+    avatar_url: profileAvatar ? profileAvatar.value.trim() : '',
+    timezone: profileTimezone ? profileTimezone.value.trim() : '',
+    language: profileLanguage ? profileLanguage.value : 'id',
+  };
+
+  try {
+    const res = await apiFetch('/api/auth/profile', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (profileError) { profileError.textContent = data.error || 'Gagal menyimpan profil.'; profileError.style.display = 'block'; }
+      return;
+    }
+    if (profileMessage) { profileMessage.textContent = 'Profil berhasil disimpan.'; profileMessage.style.display = 'block'; }
+    if (data.user) {
+      updateUserBanner(data.user);
+    }
+  } catch (e) {
+    if (profileError) { profileError.textContent = e.message || 'Gagal menyimpan profil.'; profileError.style.display = 'block'; }
+  }
+}
+
+if (btnProfile) btnProfile.addEventListener('click', openProfileModal);
+if (profileModalClose) profileModalClose.addEventListener('click', closeProfileModal);
+if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
+if (profileModal) {
+  profileModal.addEventListener('click', (e) => {
+    if (e.target === profileModal) closeProfileModal();
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // DASHBOARD NAVIGATION — Sidebar + Panel Tabs + Timeline
 // ═══════════════════════════════════════════════════════════════════

@@ -2642,3 +2642,130 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
 .workspace-main::after {
   display: none;
 }
+
+/* ══ Auth Overlay ═══════════════════════════════════════════════════════════ */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--rb-white);
+}
+
+.auth-overlay.hidden {
+  display: none;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 40px;
+  border: 3px solid var(--rb-black);
+  background: var(--rb-white);
+}
+
+.auth-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.auth-logo {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.auth-title {
+  font-family: 'Archivo Black', Impact, sans-serif;
+  font-size: 32px;
+  line-height: 1.1;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  font-size: .85rem;
+  color: var(--rb-black);
+  opacity: .7;
+}
+
+.auth-form .form-group {
+  margin-bottom: 16px;
+}
+
+.auth-form .form-label {
+  display: block;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 4px;
+}
+
+.auth-form .form-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: 'Space Mono', monospace;
+  font-size: .85rem;
+  border: 3px solid var(--rb-black);
+  background: var(--rb-sunken);
+  outline: none;
+}
+
+.auth-form .form-input:focus {
+  background: var(--rb-white);
+  border-width: 3px;
+}
+
+.auth-error {
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 3px solid var(--rb-error);
+  color: var(--rb-error);
+  font-size: .8rem;
+  font-family: 'Space Mono', monospace;
+}
+
+.auth-message {
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 3px solid var(--rb-success, #2ecc71);
+  color: var(--rb-success, #2ecc71);
+  font-size: .8rem;
+  font-family: 'Space Mono', monospace;
+}
+
+.auth-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+  font-size: .8rem;
+}
+
+.user-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--rb-black);
+}
+
+.user-name {
+  font-family: 'Space Mono', monospace;
+  font-size: .75rem;
+  text-transform: uppercase;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: .7rem;
+}

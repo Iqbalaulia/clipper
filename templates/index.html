@@ -10,6 +10,67 @@
 </head>
 <body>
 
+<!-- ═══ AUTH OVERLAY ═══ -->
+<div id="auth-overlay" class="auth-overlay">
+  <div class="auth-card">
+    <div class="auth-header">
+      <div class="auth-logo">✂️</div>
+      <h1 class="auth-title">Clipper Studio</h1>
+      <p class="auth-subtitle" id="auth-subtitle">Masuk atau daftar untuk mulai membuat klip.</p>
+    </div>
+
+    <form id="auth-form" class="auth-form">
+      <!-- Register-only fields -->
+      <div class="form-group" id="auth-name-group" style="display:none;">
+        <label class="form-label" for="auth-name">NAMA</label>
+        <input type="text" id="auth-name" class="form-input" placeholder="Nama Anda" autocomplete="name">
+      </div>
+
+      <!-- Email (shared) -->
+      <div class="form-group" id="auth-email-group">
+        <label class="form-label" for="auth-email">EMAIL</label>
+        <input type="email" id="auth-email" class="form-input" placeholder="email@contoh.com" autocomplete="email" required>
+      </div>
+
+      <!-- Password (login/register) -->
+      <div class="form-group" id="auth-password-group">
+        <label class="form-label" for="auth-password">PASSWORD</label>
+        <input type="password" id="auth-password" class="form-input" placeholder="Minimal 8 karakter" autocomplete="current-password" required>
+      </div>
+
+      <!-- Register confirm password -->
+      <div class="form-group" id="auth-password2-group" style="display:none;">
+        <label class="form-label" for="auth-password2">KONFIRMASI PASSWORD</label>
+        <input type="password" id="auth-password2" class="form-input" placeholder="Ulangi password" autocomplete="new-password">
+      </div>
+
+      <!-- Reset password new password -->
+      <div class="form-group" id="auth-reset-password-group" style="display:none;">
+        <label class="form-label" for="auth-reset-password">PASSWORD BARU</label>
+        <input type="password" id="auth-reset-password" class="form-input" placeholder="Minimal 8 karakter" autocomplete="new-password">
+      </div>
+      <div class="form-group" id="auth-reset-password2-group" style="display:none;">
+        <label class="form-label" for="auth-reset-password2">KONFIRMASI PASSWORD BARU</label>
+        <input type="password" id="auth-reset-password2" class="form-input" placeholder="Ulangi password baru" autocomplete="new-password">
+      </div>
+
+      <!-- Hidden token input for reset/verify flows -->
+      <input type="hidden" id="auth-token">
+
+      <div id="auth-error" class="auth-error" style="display:none;"></div>
+      <div id="auth-message" class="auth-message" style="display:none;"></div>
+
+      <button type="submit" id="auth-submit" class="btn btn-primary btn-full">MASUK</button>
+    </form>
+
+    <div class="auth-footer" id="auth-footer">
+      <button type="button" id="auth-forgot" class="btn btn-ghost" style="display:none;">Lupa password?</button>
+      <span id="auth-mode-text">Belum punya akun?</span>
+      <button type="button" id="auth-toggle" class="btn btn-ghost">Daftar</button>
+    </div>
+  </div>
+</div>
+
 <div class="dashboard">
 
   <!-- ═══ LEFT SIDEBAR ═══ -->
@@ -72,6 +133,11 @@
           <span class="dot"></span>
           <span class="dep-label">FFmpeg: memeriksa…</span>
         </span>
+      </div>
+      <div class="user-banner" id="user-banner" style="display:none;">
+        <span class="user-name" id="user-name"></span>
+        <button type="button" id="btn-profile" class="btn btn-secondary btn-small">PROFIL</button>
+        <button type="button" id="btn-logout" class="btn btn-secondary btn-small">KELUAR</button>
       </div>
     </div>
   </header>
@@ -1053,6 +1119,42 @@
           <button type="button" class="btn" id="modal-btn-copy-all" style="width:100%; margin-top:12px;">📋 Copy Semua</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PROFILE MODAL ═══ -->
+<div id="profile-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width: 480px;">
+    <div class="modal-header">
+      <h3>Edit Profil</h3>
+      <button type="button" class="modal-close" id="profile-modal-close">&times;</button>
+    </div>
+    <div class="modal-body" style="padding: 20px; flex-direction: column; overflow-y: auto;">
+      <form id="profile-form" class="auth-form">
+        <div class="form-group">
+          <label class="form-label" for="profile-name">NAMA</label>
+          <input type="text" id="profile-name" class="form-input" placeholder="Nama Anda">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-avatar">AVATAR URL</label>
+          <input type="url" id="profile-avatar" class="form-input" placeholder="https://example.com/avatar.png">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-timezone">TIMEZONE</label>
+          <input type="text" id="profile-timezone" class="form-input" placeholder="Asia/Jakarta">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile-language">BAHASA</label>
+          <select id="profile-language" class="form-input">
+            <option value="id">Bahasa Indonesia</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <div id="profile-error" class="auth-error" style="display:none;"></div>
+        <div id="profile-message" class="auth-message" style="display:none;"></div>
+        <button type="submit" class="btn btn-primary btn-full">SIMPAN PROFIL</button>
+      </form>
     </div>
   </div>
 </div>

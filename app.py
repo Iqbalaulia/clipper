@@ -8,7 +8,11 @@ import time
 import sys
 import uuid
 import logging
-from datetime import datetime
+import secrets
+import smtplib
+from datetime import datetime, timedelta, timezone
+from email.mime.text import MIMEText
+from urllib.parse import urljoin
 import requests
 import subprocess
 import shutil
@@ -21,14 +25,31 @@ from flask import (
     Response,
     stream_with_context,
 )
+from flask_jwt_extended import (
+    JWTManager,
+    jwt_required,
+    verify_jwt_in_request,
+    create_access_token,
+    create_refresh_token,
+    set_access_cookies,
+    set_refresh_cookies,
+    unset_jwt_cookies,
+    get_jwt_identity,
+)
 import clipper
 import models
 import task_queue
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
-COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 LOGS_DIR    = os.path.join(BASE_DIR, "logs")
+
+
+def get_user_cookies_file(user_id=None):
+    """Return the cookies.txt path for a user (or legacy global file if no user)."""
+    if user_id is None:
+        return os.path.join(BASE_DIR, "cookies.txt")
+    return os.path.join(OUTPUT_DIR, f"cookies_{user_id}.txt")
 
 # Pastikan runtime Node.js bawaan (node.exe di folder proyek) bisa ditemukan
 # oleh subprocess yt-dlp meskipun aplikasi dijalankan dari cwd lain.
@@ -47,6 +68,140 @@ logger = logging.getLogger("clipper")
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max request
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(32).hex())
+
+# JWT setup: access + refresh tokens delivered as httpOnly cookies.
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", app.config["SECRET_KEY"])
+app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
+app.config["JWT_ACCESS_COOKIE_NAME"] = "access_token"
+app.config["JWT_REFRESH_COOKIE_NAME"] = "refresh_token"
+app.config["JWT_COOKIE_SECURE"] = os.environ.get("JWT_COOKIE_SECURE", "false").lower() == "true"
+app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+app.config["JWT_COOKIE_CSRF_PROTECT"] = False  # P3: enable CSRF double-submit cookie
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_HOURS", "1")))
+app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "30")))
+
+jwt = JWTManager(app)
+
+# Email configuration for verification & forgot-password emails.
+app.config["SMTP_HOST"] = os.environ.get("SMTP_HOST", "")
+app.config["SMTP_PORT"] = int(os.environ.get("SMTP_PORT", "587"))
+app.config["SMTP_USER"] = os.environ.get("SMTP_USER", "")
+app.config["SMTP_PASSWORD"] = os.environ.get("SMTP_PASSWORD", "")
+app.config["SMTP_FROM"] = os.environ.get("SMTP_FROM", app.config["SMTP_USER"])
+app.config["SMTP_TLS"] = os.environ.get("SMTP_TLS", "true").lower() == "true"
+app.config["PUBLIC_BASE_URL"] = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000")
+app.config["EMAIL_VERIFICATION_REQUIRED"] = os.environ.get("EMAIL_VERIFICATION_REQUIRED", "false").lower() == "true"
+app.config["EMAIL_VERIFICATION_TOKEN_HOURS"] = int(os.environ.get("EMAIL_VERIFICATION_TOKEN_HOURS", "24"))
+app.config["PASSWORD_RESET_TOKEN_HOURS"] = int(os.environ.get("PASSWORD_RESET_TOKEN_HOURS", "1"))
+
+
+class _CurrentUser:
+    """Flask-Login-like proxy backed by the JWT identity in the current request."""
+
+    @property
+    def _user(self):
+        if not hasattr(request, "_jwt_user"):
+            try:
+                verify_jwt_in_request(optional=True)
+                identity = get_jwt_identity()
+                request._jwt_user = models.get_user_by_id(int(identity)) if identity else None
+            except Exception:
+                request._jwt_user = None
+        return request._jwt_user
+
+    @property
+    def is_authenticated(self):
+        return self._user is not None
+
+    @property
+    def id(self):
+        return self._user.id if self._user else None
+
+    @property
+    def email(self):
+        return self._user.email if self._user else None
+
+    @property
+    def name(self):
+        return self._user.name if self._user else None
+
+
+current_user = _CurrentUser()
+
+
+def login_required(f):
+    """Drop-in replacement for flask_login.login_required using JWT cookies."""
+    return jwt_required()(f)
+
+
+def _generate_token() -> str:
+    """Generate a URL-safe random token."""
+    return secrets.token_urlsafe(32)
+
+
+def _token_expiry(hours: int) -> str:
+    """Return an ISO timestamp `hours` from now."""
+    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+
+
+def _send_email(to: str, subject: str, body: str) -> bool:
+    """Send an email using the configured SMTP server. Returns True on success."""
+    host = app.config["SMTP_HOST"]
+    if not host:
+        logger.warning("SMTP_HOST not configured; email to %s was not sent.", to)
+        return False
+
+    msg = MIMEText(body, "html", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = app.config["SMTP_FROM"]
+    msg["To"] = to
+
+    try:
+        if app.config["SMTP_TLS"]:
+            server = smtplib.SMTP(host, app.config["SMTP_PORT"], timeout=10)
+            server.starttls()
+        else:
+            server = smtplib.SMTP(host, app.config["SMTP_PORT"], timeout=10)
+        user = app.config["SMTP_USER"]
+        password = app.config["SMTP_PASSWORD"]
+        if user and password:
+            server.login(user, password)
+        server.sendmail(app.config["SMTP_FROM"], [to], msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        logger.exception("Failed to send email to %s: %s", to, e)
+        return False
+
+
+def _send_verification_email(user: models.User, token: str) -> bool:
+    """Send an email verification link to the user."""
+    verify_url = urljoin(app.config["PUBLIC_BASE_URL"], f"/verify-email?token={token}")
+    subject = "Verifikasi Email - Clipper Studio"
+    body = f"""
+    <p>Halo {user.name or user.email},</p>
+    <p>Terima kasih telah mendaftar di Clipper Studio. Klik link di bawah ini untuk memverifikasi email Anda:</p>
+    <p><a href="{verify_url}">{verify_url}</a></p>
+    <p>Link ini berlaku selama {app.config['EMAIL_VERIFICATION_TOKEN_HOURS']} jam.</p>
+    <p>Jika Anda tidak mendaftar, abaikan email ini.</p>
+    """
+    return _send_email(user.email, subject, body)
+
+
+def _send_password_reset_email(user: models.User, token: str) -> bool:
+    """Send a password reset link to the user."""
+    reset_url = urljoin(app.config["PUBLIC_BASE_URL"], f"/reset-password?token={token}")
+    subject = "Reset Password - Clipper Studio"
+    body = f"""
+    <p>Halo {user.name or user.email},</p>
+    <p>Kami menerima permintaan reset password untuk akun Anda. Klik link di bawah ini untuk mengatur password baru:</p>
+    <p><a href="{reset_url}">{reset_url}</a></p>
+    <p>Link ini berlaku selama {app.config['PASSWORD_RESET_TOKEN_HOURS']} jam.</p>
+    <p>Jika Anda tidak meminta reset password, abaikan email ini.</p>
+    """
+    return _send_email(user.email, subject, body)
+
 
 # Mark any tasks that were running when the server last stopped as errored
 stale_count = models.reset_stale_tasks()
@@ -59,6 +214,20 @@ TASK_TIMEOUT = int(os.environ.get("CLIPPER_TASK_TIMEOUT", "3600"))
 task_queue.get_queue(max_workers=MAX_CONCURRENT_WORKERS, task_timeout=TASK_TIMEOUT)
 
 
+def _current_user_id():
+    """Return the current authenticated user's id, or None."""
+    return current_user.id if current_user.is_authenticated else None
+
+
+def _get_effective_cookies_file():
+    """Return the user's cookies file if it exists, otherwise the legacy global one."""
+    user_file = get_user_cookies_file(_current_user_id())
+    if os.path.isfile(user_file):
+        return user_file
+    global_file = os.path.join(BASE_DIR, "cookies.txt")
+    return global_file if os.path.isfile(global_file) else ""
+
+
 # ── Routes ──────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -66,23 +235,266 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/verify-email")
+def verify_email_page():
+    """Landing page for email verification links."""
+    return render_template("index.html")
+
+
+@app.route("/reset-password")
+def reset_password_page():
+    """Landing page for password reset links."""
+    return render_template("index.html")
+
+
+# ── Auth routes ───────────────────────────────────────────────────────────────
+
+def _set_auth_cookies(response, user_id: int):
+    """Attach JWT access and refresh tokens as httpOnly cookies."""
+    identity = str(user_id)
+    access_token = create_access_token(identity=identity)
+    refresh_token = create_refresh_token(identity=identity)
+    set_access_cookies(response, access_token)
+    set_refresh_cookies(response, refresh_token)
+
+
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip()
+    password = data.get("password") or ""
+    name = (data.get("name") or "").strip()
+
+    if not email or not password:
+        return jsonify({"error": "Email dan password wajib diisi."}), 400
+
+    try:
+        user = models.create_user(email, password, name)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if not user:
+        return jsonify({"error": "Email sudah terdaftar."}), 409
+
+    # Send verification email if SMTP is configured.
+    verification_token = _generate_token()
+    expiry = _token_expiry(app.config["EMAIL_VERIFICATION_TOKEN_HOURS"])
+    models.set_email_verification_token(user.id, verification_token, expiry)
+    email_sent = _send_verification_email(user, verification_token)
+
+    response = jsonify({
+        "success": True,
+        "user": {"id": user.id, "email": user.email, "name": user.name},
+        "email_verification_required": app.config["EMAIL_VERIFICATION_REQUIRED"],
+        "email_verification_sent": email_sent,
+    })
+    _set_auth_cookies(response, user.id)
+    return response
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "Email dan password wajib diisi."}), 400
+
+    user = models.authenticate_user(email, password)
+    if not user:
+        return jsonify({"error": "Email atau password salah."}), 401
+    if not user.is_active:
+        return jsonify({"error": "Akun tidak aktif."}), 403
+    if app.config["EMAIL_VERIFICATION_REQUIRED"] and not user.email_verified:
+        return jsonify({
+            "error": "Email belum diverifikasi. Silakan cek inbox Anda.",
+            "email_verification_required": True,
+        }), 403
+
+    response = jsonify({
+        "success": True,
+        "user": {"id": user.id, "email": user.email, "name": user.name},
+    })
+    _set_auth_cookies(response, user.id)
+    return response
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+@login_required
+def logout():
+    response = jsonify({"success": True, "message": "Logout berhasil."})
+    unset_jwt_cookies(response)
+    return response
+
+
+@app.route("/api/auth/refresh", methods=["POST"])
+@jwt_required(refresh=True)
+def refresh():
+    identity = get_jwt_identity()
+    access_token = create_access_token(identity=identity)
+    response = jsonify({"success": True})
+    set_access_cookies(response, access_token)
+    return response
+
+
+@app.route("/api/auth/me")
+def me():
+    if current_user.is_authenticated:
+        user = current_user._user
+        return jsonify({
+            "authenticated": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "email_verified": user.email_verified,
+                "avatar_url": user.avatar_url,
+                "timezone": user.timezone,
+                "language": user.language,
+            },
+            "email_verification_required": app.config["EMAIL_VERIFICATION_REQUIRED"],
+        })
+    return jsonify({"authenticated": False, "user": None})
+
+
+@app.route("/api/auth/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip()
+    if not email:
+        return jsonify({"error": "Email wajib diisi."}), 400
+
+    user = models.get_user_by_email(email)
+    if user:
+        token = _generate_token()
+        expiry = _token_expiry(app.config["PASSWORD_RESET_TOKEN_HOURS"])
+        models.set_password_reset_token(user.id, token, expiry)
+        _send_password_reset_email(user, token)
+
+    # Always return success to prevent email enumeration.
+    return jsonify({
+        "success": True,
+        "message": "Jika email terdaftar, link reset password telah dikirim.",
+    })
+
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json(force=True) or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("password") or ""
+
+    if not token or not new_password:
+        return jsonify({"error": "Token dan password baru wajib diisi."}), 400
+
+    try:
+        ok = models.reset_password(token, new_password)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if not ok:
+        return jsonify({"error": "Token tidak valid atau sudah kadaluarsa."}), 400
+
+    return jsonify({"success": True, "message": "Password berhasil diubah. Silakan masuk."})
+
+
+@app.route("/api/auth/verify-email", methods=["POST"])
+def verify_email():
+    data = request.get_json(force=True) or {}
+    token = (data.get("token") or "").strip()
+    if not token:
+        return jsonify({"error": "Token verifikasi wajib diisi."}), 400
+
+    if models.verify_email(token):
+        return jsonify({"success": True, "message": "Email berhasil diverifikasi."})
+    return jsonify({"error": "Token tidak valid atau sudah kadaluarsa."}), 400
+
+
+@app.route("/api/auth/resend-verification", methods=["POST"])
+def resend_verification():
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip()
+    if not email:
+        return jsonify({"error": "Email wajib diisi."}), 400
+
+    user = models.get_user_by_email(email)
+    if user and not user.email_verified:
+        token = _generate_token()
+        expiry = _token_expiry(app.config["EMAIL_VERIFICATION_TOKEN_HOURS"])
+        models.set_email_verification_token(user.id, token, expiry)
+        _send_verification_email(user, token)
+
+    return jsonify({
+        "success": True,
+        "message": "Jika email terdaftar dan belum terverifikasi, email verifikasi telah dikirim ulang.",
+    })
+
+
+@app.route("/api/auth/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if request.method == "GET":
+        user = current_user._user
+        return jsonify({
+            "success": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "avatar_url": user.avatar_url,
+                "timezone": user.timezone,
+                "language": user.language,
+            },
+        })
+
+    data = request.get_json(force=True) or {}
+    user = models.update_user_profile(
+        current_user.id,
+        name=data.get("name"),
+        avatar_url=data.get("avatar_url"),
+        timezone=data.get("timezone"),
+        language=data.get("language"),
+    )
+    if not user:
+        return jsonify({"error": "Gagal memperbarui profil."}), 400
+    return jsonify({
+        "success": True,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "avatar_url": user.avatar_url,
+            "timezone": user.timezone,
+            "language": user.language,
+        },
+    })
+
+
 @app.route("/cookies-status")
+@login_required
 def cookies_status():
-    exists = os.path.isfile(COOKIES_FILE)
+    cookies_file = get_user_cookies_file(_current_user_id())
+    exists = os.path.isfile(cookies_file)
     return jsonify({"exists": exists})
 
 
 @app.route("/upload-cookies", methods=["POST"])
+@login_required
 def upload_cookies():
     if "file" not in request.files:
         return jsonify({"error": "Tidak ada file yang diunggah."}), 400
-    
+
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "Nama file kosong."}), 400
-    
+
+    cookies_file = get_user_cookies_file(_current_user_id())
     try:
-        file.save(COOKIES_FILE)
+        os.makedirs(os.path.dirname(cookies_file), exist_ok=True)
+        file.save(cookies_file)
         return jsonify({"success": True, "message": "File cookies.txt berhasil diunggah."})
     except Exception as e:
         return jsonify({"error": f"Gagal menyimpan file: {str(e)}"}), 500
@@ -133,8 +545,8 @@ def video_info():
             sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist",
             "--no-check-certificates",
         ]
-        if os.path.isfile(COOKIES_FILE):
-            cmd += ["--cookies", COOKIES_FILE]
+        if os.path.isfile(_get_effective_cookies_file()):
+            cmd += ["--cookies", _get_effective_cookies_file()]
         cmd.append(url)
 
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
@@ -174,6 +586,7 @@ def video_info():
 
 
 @app.route("/clip", methods=["POST"])
+@login_required
 def clip():
     """Start a clip task. Returns task_id immediately."""
     data = request.get_json(force=True)
@@ -239,7 +652,7 @@ def clip():
     if output_quality not in _valid_quality:
         output_quality = "standard"
     
-    cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
+    cookies_file = _get_effective_cookies_file()
 
     # Disk space check (rough estimate: 500 MB minimum)
     if not _has_enough_disk_space(OUTPUT_DIR, min_bytes=500 * 1024 * 1024):
@@ -279,14 +692,22 @@ def clip():
         "output_resolution": output_resolution,
         "output_quality": output_quality,
     }
-    task_queue.submit_task(task_id=task_id, url=url, start=start, end=end, output_dir=OUTPUT_DIR, kwargs=kwargs)
+    task_queue.submit_task(
+        task_id=task_id, url=url, start=start, end=end,
+        output_dir=OUTPUT_DIR, kwargs=kwargs,
+        user_id=_current_user_id(),
+    )
 
     return jsonify({"task_id": task_id})
 
 
 @app.route("/cancel/<task_id>", methods=["POST"])
+@login_required
 def cancel_task(task_id: str):
-    """Cancel a queued or running task."""
+    """Cancel a queued or running task owned by the current user."""
+    task = models.get_task(task_id, user_id=_current_user_id())
+    if task is None:
+        return jsonify({"error": "Task tidak ditemukan atau bukan milik Anda."}), 404
     ok = task_queue.cancel_task(task_id)
     if not ok:
         return jsonify({"error": "Task tidak ditemukan atau sudah selesai."}), 400
@@ -294,12 +715,14 @@ def cancel_task(task_id: str):
 
 
 @app.route("/queue-status")
+@login_required
 def queue_status():
     """Return current task queue status."""
     return jsonify(task_queue.queue_status())
 
 
 @app.route("/progress/<task_id>")
+@login_required
 def progress(task_id: str):
     """Server-Sent Events stream for real-time progress updates."""
 
@@ -307,9 +730,9 @@ def progress(task_id: str):
     def generate():
         sent_logs = 0
         while True:
-            task = clipper.get_task(task_id)
+            task = clipper.get_task(task_id, user_id=_current_user_id())
             if task is None:
-                yield _sse({"error": "Task tidak ditemukan."})
+                yield _sse({"error": "Task tidak ditemukan atau bukan milik Anda."})
                 break
 
             # Send only new log lines
@@ -335,23 +758,32 @@ def progress(task_id: str):
 
 
 @app.route("/download/<path:filename>")
+@login_required
 def download(filename: str):
-    """Serve the clipped file for download."""
+    """Serve the clipped file for download if owned by current user."""
+    task = models.get_task_by_output_file(filename, user_id=_current_user_id())
+    if task is None:
+        return jsonify({"error": "File tidak ditemukan atau bukan milik Anda."}), 404
     return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
 
 
 @app.route("/download-thumb/<path:filename>")
+@login_required
 def download_thumb(filename: str):
-    """Serve a generated thumbnail image for download."""
+    """Serve a generated thumbnail image for download if owned by current user."""
+    task = models.get_task_by_thumbnail_file(filename, user_id=_current_user_id())
+    if task is None:
+        return jsonify({"error": "File tidak ditemukan atau bukan milik Anda."}), 404
     return send_from_directory(OUTPUT_DIR, filename, as_attachment=True)
 
 
 @app.route("/task-meta/<task_id>")
+@login_required
 def task_meta(task_id: str):
     """Return extended metadata for a finished task (virality score + thumbnail)."""
-    task = clipper.get_task(task_id)
+    task = clipper.get_task(task_id, user_id=_current_user_id())
     if task is None:
-        return jsonify({"error": "Task tidak ditemukan."}), 404
+        return jsonify({"error": "Task tidak ditemukan atau bukan milik Anda."}), 404
     return jsonify({
         "task_id": task["id"],
         "status": task["status"],
@@ -492,6 +924,7 @@ def _call_gemini(api_key: str, messages: list, response_json: bool = False,
 
 
 @app.route("/generate-hook", methods=["POST"])
+@login_required
 def generate_hook():
     """Meminta AI (Gemini) untuk membuat hook title singkat berdasarkan video."""
     data = request.get_json(force=True)
@@ -508,8 +941,8 @@ def generate_hook():
         cmd = [
             sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist", url
         ]
-        if os.path.isfile(COOKIES_FILE):
-            cmd += ["--cookies", COOKIES_FILE]
+        if os.path.isfile(_get_effective_cookies_file()):
+            cmd += ["--cookies", _get_effective_cookies_file()]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
         info = json.loads(r.stdout)
         
@@ -579,6 +1012,7 @@ BALAS HANYA dengan teks hook final saja (tanpa penjelasan, tanpa nomor, tanpa ta
 
 
 @app.route("/generate-copy", methods=["POST"])
+@login_required
 def generate_copy():
     """Meminta AI (Gemini) untuk membuat copywriting berdasarkan deskripsi & waktu video."""
     data = request.get_json(force=True)
@@ -604,8 +1038,8 @@ def generate_copy():
             # 1. Ekstrak metadata video dengan yt-dlp
             cmd = [sys.executable, "-m", "yt_dlp", "--js-runtimes", "node", "--dump-json", "--no-playlist", url]
             use_cookies = bool(data.get("cookies", False))
-            if use_cookies and os.path.isfile(COOKIES_FILE):
-                cmd += ["--cookies", COOKIES_FILE]
+            if use_cookies and os.path.isfile(_get_effective_cookies_file()):
+                cmd += ["--cookies", _get_effective_cookies_file()]
             r = subprocess.run(cmd, capture_output=True, text=True, check=True)
             info = json.loads(r.stdout)
             
@@ -756,13 +1190,14 @@ def srt_timestamp_to_seconds(ts):
 # ── Detect Controversial Moments ────────────────────────────────────────────
 
 @app.route("/detect-moments", methods=["POST"])
+@login_required
 def detect_moments():
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
     api_key = (data.get("api_key") or "").strip()
     num_moments = int(data.get("num_moments") or 4)
     subtitle_lang = (data.get("subtitle_lang") or "id,en").strip()
-    use_cookies = os.path.isfile(COOKIES_FILE)
+    use_cookies = os.path.isfile(_get_effective_cookies_file())
 
     if not url: return jsonify({"error": "URL video wajib diisi."}), 400
     if not api_key: return jsonify({"error": "Gemini API Key wajib diisi."}), 400
@@ -774,7 +1209,7 @@ def detect_moments():
             "--no-check-certificates",
         ]
         if use_cookies:
-            cmd += ["--cookies", COOKIES_FILE]
+            cmd += ["--cookies", _get_effective_cookies_file()]
         cmd.append(url)
 
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -814,7 +1249,7 @@ def detect_moments():
             "--no-playlist",
         ]
         if use_cookies:
-            sub_cmd += ["--cookies", COOKIES_FILE]
+            sub_cmd += ["--cookies", _get_effective_cookies_file()]
         sub_cmd.append(url)
 
         sub_result = subprocess.run(sub_cmd, capture_output=True, text=True, timeout=90)
@@ -972,11 +1407,12 @@ PENTING: Jika tidak yakin dengan timestamp akurat, preferensi berikan batas awal
 
 
 @app.route("/clip-moments", methods=["POST"])
+@login_required
 def clip_moments():
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
     moments = data.get("moments") or []
-    cookies_file = COOKIES_FILE if os.path.isfile(COOKIES_FILE) else ""
+    cookies_file = _get_effective_cookies_file() if os.path.isfile(_get_effective_cookies_file()) else ""
 
     if not url or not moments:
         return jsonify({"error": "URL dan momen wajib diisi."}), 400
@@ -1061,7 +1497,7 @@ def clip_moments():
             "output_quality": output_quality,
             "moment_index": moment_index,
         }
-        task_queue.submit_task(task_id, url, start, end, OUTPUT_DIR, kwargs)
+        task_queue.submit_task(task_id, url, start, end, OUTPUT_DIR, kwargs, user_id=_current_user_id())
         task_list.append({
             "task_id": task_id,
             "moment_index": moment.get("index", 0),
@@ -1073,13 +1509,14 @@ def clip_moments():
 
 
 @app.route("/batch-progress", methods=["POST"])
+@login_required
 def batch_progress():
     data = request.get_json(force=True)
     task_ids = data.get("task_ids") or []
     
     result = {}
     for tid in task_ids:
-        t = clipper.get_task(tid)
+        t = clipper.get_task(tid, user_id=_current_user_id())
         if t:
             result[tid] = {
                 "status": t["status"],

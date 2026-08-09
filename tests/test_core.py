@@ -17,7 +17,7 @@ import thumbnail
 
 def test_create_and_get_task():
     task_id = "test-task-create"
-    models.create_task(task_id, {"url": "https://example.com/video", "start": "0", "end": "10"})
+    models.create_task(task_id, params={"url": "https://example.com/video", "start": "0", "end": "10"})
     task = models.get_task(task_id)
     assert task is not None
     assert task["status"] == "pending"
@@ -29,7 +29,7 @@ def test_create_and_get_task():
 def test_update_task_and_logs():
     task_id = "test-task-logs-2"
     models.delete_task(task_id)
-    models.create_task(task_id, {})
+    models.create_task(task_id, params={})
     models.update_task(task_id, status="downloading", progress=25)
     models.append_log(task_id, "downloading video")
     models.append_log(task_id, "done")
@@ -155,6 +155,117 @@ Third line.
         assert segments[1]["text"] == "Second line."
     finally:
         os.remove(path)
+
+
+# ── Auth tests ───────────────────────────────────────────────────────────────
+
+import app as clipper_app
+
+
+def _auth_client():
+    clipper_app.app.config["TESTING"] = True
+    return clipper_app.app.test_client()
+
+
+def test_auth_register_and_login():
+    client = _auth_client()
+    email = f"auth_test_{os.getpid()}@example.com"
+
+    # Register
+    res = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Test User",
+    })
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    assert data["user"]["email"] == email
+    # JWT cookies should be set as httpOnly
+    cookies = res.headers.getlist("Set-Cookie")
+    assert any("access_token" in c for c in cookies)
+    assert any("refresh_token" in c for c in cookies)
+    assert all("HttpOnly" in c for c in cookies)
+
+    # Duplicate register
+    res = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Test User",
+    })
+    assert res.status_code == 409
+
+    # Login with wrong password
+    res = client.post("/api/auth/login", json={
+        "email": email,
+        "password": "wrongpassword",
+    })
+    assert res.status_code == 401
+
+    # Login with correct password
+    res = client.post("/api/auth/login", json={
+        "email": email,
+        "password": "password123",
+    })
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    assert data["user"]["email"] == email
+
+    # /api/auth/me should be authenticated
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["authenticated"] is True
+    assert data["user"]["email"] == email
+
+    # Refresh token endpoint should issue a new access token
+    res = client.post("/api/auth/refresh")
+    assert res.status_code == 200
+    assert any("access_token" in c for c in res.headers.getlist("Set-Cookie"))
+
+    # Logout
+    res = client.post("/api/auth/logout")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+
+    # /api/auth/me should be unauthenticated after logout
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["authenticated"] is False
+    assert data["user"] is None
+
+
+def test_auth_register_validation():
+    client = _auth_client()
+
+    # Missing email/password
+    res = client.post("/api/auth/register", json={"email": "", "password": ""})
+    assert res.status_code == 400
+
+    # Invalid email
+    res = client.post("/api/auth/register", json={
+        "email": "not-an-email",
+        "password": "password123",
+    })
+    assert res.status_code == 400
+
+    # Short password
+    res = client.post("/api/auth/register", json={
+        "email": "shortpass@example.com",
+        "password": "123",
+    })
+    assert res.status_code == 400
+
+
+def test_auth_me_unauthenticated():
+    client = _auth_client()
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["authenticated"] is False
 
 
 if __name__ == "__main__":

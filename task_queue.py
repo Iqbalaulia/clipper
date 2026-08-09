@@ -23,6 +23,7 @@ logger = logging.getLogger("clipper")
 @dataclass
 class TaskItem:
     task_id: str
+    user_id: Optional[int]
     url: str
     start: str
     end: str
@@ -71,11 +72,12 @@ class TaskQueue:
         end: str,
         output_dir: str,
         kwargs: dict,
+        user_id: Optional[int] = None,
     ) -> None:
         """Submit a task to the queue. The task must already exist in the DB."""
-        item = TaskItem(task_id, url, start, end, output_dir, kwargs or {})
+        item = TaskItem(task_id, user_id, url, start, end, output_dir, kwargs or {})
         self._queue.put(item)
-        logger.info("Task %s submitted to queue", task_id)
+        logger.info("Task %s submitted to queue (user_id=%s)", task_id, user_id)
 
     def cancel(self, task_id: str) -> bool:
         """Request cancellation of a task."""
@@ -189,10 +191,11 @@ def submit_task(
     end: str,
     output_dir: str,
     kwargs: dict,
+    user_id: Optional[int] = None,
 ) -> None:
     """Create a DB task and submit it to the queue."""
-    models.create_task(task_id, params={"url": url, "start": start, "end": end, **kwargs})
-    get_queue().submit(task_id, url, start, end, output_dir, kwargs)
+    models.create_task(task_id, user_id=user_id, params={"url": url, "start": start, "end": end, **kwargs})
+    get_queue().submit(task_id, url, start, end, output_dir, kwargs, user_id=user_id)
 
 
 def cancel_task(task_id: str) -> bool:

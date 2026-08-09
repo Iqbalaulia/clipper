@@ -27,13 +27,13 @@ def create_task() -> str:
     return task_id
 
 
-def get_task(task_id: str) -> dict | None:
-    return models.get_task(task_id)
+def get_task(task_id: str, user_id: int | None = None) -> dict | None:
+    return models.get_task(task_id, user_id=user_id)
 
 
-def get_tasks_batch(task_ids: list) -> dict:
+def get_tasks_batch(task_ids: list, user_id: int | None = None) -> dict:
     """Return a dict of {task_id: task_data} for all given task IDs."""
-    return {tid: models.get_task(tid) for tid in task_ids}
+    return {tid: models.get_task(tid, user_id=user_id) for tid in task_ids}
 
 
 def _update_task(task_id: str, **kwargs):
