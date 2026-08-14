@@ -77,6 +77,7 @@ class User(UserMixin):
         email: str,
         name: str,
         is_active: bool = True,
+        is_admin: bool = False,
         email_verified: bool = False,
         avatar_url: str = "",
         timezone: str = "",
@@ -86,6 +87,7 @@ class User(UserMixin):
         self.email = email
         self.name = name
         self._is_active = is_active
+        self.is_admin = is_admin
         self.email_verified = email_verified
         self.avatar_url = avatar_url or ""
         self.timezone = timezone or "UTC"
@@ -102,6 +104,7 @@ class User(UserMixin):
             email=row["email"],
             name=row["name"] or "",
             is_active=bool(row["is_active"]),
+            is_admin=bool(row["is_admin"]),
             email_verified=bool(row["email_verified"]),
             avatar_url=row["avatar_url"] or "",
             timezone=row["timezone"] or "UTC",
@@ -123,6 +126,7 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             password_hash TEXT NOT NULL,
             name TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
+            is_admin INTEGER NOT NULL DEFAULT 0,
             email_verified INTEGER NOT NULL DEFAULT 0,
             email_verification_token TEXT,
             email_verification_expires_at TEXT,
@@ -257,6 +261,7 @@ def _init_tables(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "tasks", "virality_reason", "TEXT")
     _add_column_if_missing(conn, "tasks", "thumbnail_file", "TEXT")
     _add_column_if_missing(conn, "tasks", "moment_index", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "users", "email_verified", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "users", "email_verification_token", "TEXT")
     _add_column_if_missing(conn, "users", "email_verification_expires_at", "TEXT")
@@ -628,7 +633,7 @@ def get_or_create_oauth_user(provider: str, subject: str, email: str, name: str 
 def get_user_by_id(user_id: int) -> Optional[User]:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT id, email, password_hash, name, is_active, email_verified, avatar_url, timezone, language FROM users WHERE id = ?",
+            "SELECT id, email, password_hash, name, is_active, is_admin, email_verified, avatar_url, timezone, language FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
         return User.from_row(row) if row else None
@@ -638,7 +643,7 @@ def get_user_by_email(email: str) -> Optional[User]:
     email = email.strip().lower()
     with _connect() as conn:
         row = conn.execute(
-            "SELECT id, email, password_hash, name, is_active, email_verified, avatar_url, timezone, language FROM users WHERE email = ?",
+            "SELECT id, email, password_hash, name, is_active, is_admin, email_verified, avatar_url, timezone, language FROM users WHERE email = ?",
             (email,),
         ).fetchone()
         return User.from_row(row) if row else None
@@ -680,6 +685,17 @@ def update_user_profile(user_id: int, name: str = "", avatar_url: str = "", time
     return get_user_by_id(user_id)
 
 
+def set_user_admin(user_id: int, is_admin: bool = True) -> Optional[User]:
+    """Toggle admin flag for a user."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET is_admin = ?, updated_at = ? WHERE id = ?",
+            (int(bool(is_admin)), _now(), user_id),
+        )
+        conn.commit()
+    return get_user_by_id(user_id)
+
+
 def set_email_verification_token(user_id: int, token: str, expires_at: str) -> None:
     """Store an email verification token for the user."""
     with _connect() as conn:
@@ -698,7 +714,7 @@ def get_user_by_email_verification_token(token: str) -> Optional[User]:
     with _connect() as conn:
         row = conn.execute(
             """
-            SELECT id, email, password_hash, name, is_active, email_verified, avatar_url, timezone, language
+            SELECT id, email, password_hash, name, is_active, is_admin, email_verified, avatar_url, timezone, language
             FROM users
             WHERE email_verification_token = ? AND email_verification_expires_at > ?
             """,
@@ -744,7 +760,7 @@ def get_user_by_password_reset_token(token: str) -> Optional[User]:
     with _connect() as conn:
         row = conn.execute(
             """
-            SELECT id, email, password_hash, name, is_active, email_verified, avatar_url, timezone, language
+            SELECT id, email, password_hash, name, is_active, is_admin, email_verified, avatar_url, timezone, language
             FROM users
             WHERE password_reset_token = ? AND password_reset_expires_at > ?
             """,

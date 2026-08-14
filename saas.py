@@ -92,6 +92,14 @@ def usage_summary(user_id):
     return {"period": period_key(), "plan_code": plan_code, "plan": plan["name"], "metrics": metrics}
 
 
+def _is_admin(user_id):
+    """Return True if the user has the admin flag set."""
+    if not user_id:
+        return False
+    user = models.get_user_by_id(user_id)
+    return bool(user and user.is_admin)
+
+
 def consume_usage(user_id, metric, quantity, idempotency_key, task_id=None):
     """Atomically enforce and consume a monthly plan allowance."""
     if quantity <= 0:
@@ -114,7 +122,7 @@ def consume_usage(user_id, metric, quantity, idempotency_key, task_id=None):
             (user_id, period_key(), metric),
         ).fetchone()
         used = float(row["used"] or 0)
-        if used + quantity > limit:
+        if used + quantity > limit and not _is_admin(user_id):
             conn.rollback()
             raise PermissionError(f"Kuota {metric} bulan ini telah habis.")
         conn.execute(
@@ -156,7 +164,7 @@ def consume_batch_task_usage(user_id, tasks):
                 "SELECT COALESCE(SUM(quantity), 0) FROM usage_events WHERE user_id = ? AND period_key = ? AND metric = ?",
                 (user_id, key, metric),
             ).fetchone()[0]
-            if float(used or 0) + quantity > plan["limits"][metric]:
+            if float(used or 0) + quantity > plan["limits"][metric] and not _is_admin(user_id):
                 conn.rollback()
                 raise PermissionError(f"Kuota {metric} bulan ini telah habis.")
         for item in tasks:

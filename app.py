@@ -227,6 +227,11 @@ def _current_user_id():
     return current_user.id if current_user.is_authenticated else None
 
 
+def _current_user_is_admin() -> bool:
+    """Return True if the authenticated user is an admin."""
+    return current_user.is_authenticated and getattr(current_user, "is_admin", False)
+
+
 def _resolve_api_key(data: dict) -> str:
     """Persist a supplied Gemini key encrypted, or use the user's stored key."""
     api_key = (data.get("api_key") or "").strip()
@@ -237,6 +242,8 @@ def _resolve_api_key(data: dict) -> str:
 
 
 def _quota_error(requested_tasks: int = 1):
+    if _current_user_is_admin():
+        return None
     summary = saas.usage_summary(_current_user_id())
     quota = summary["metrics"]["clip_count"]
     if quota["used"] + requested_tasks <= quota["limit"]:

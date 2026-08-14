@@ -370,6 +370,19 @@ def test_monthly_usage_quota_and_idempotency():
         saas.consume_usage(user.id, "clip_count", 99, f"{key}-overflow")
 
 
+def test_admin_bypasses_usage_quota():
+    user = models.create_user(f"admin_usage_{uuid.uuid4().hex}@example.com", "password123")
+    models.set_user_admin(user.id, True)
+    admin = models.get_user_by_id(user.id)
+    assert admin.is_admin is True
+
+    # Admin should be able to consume far beyond the free plan limit.
+    key = f"admin-usage-test-{uuid.uuid4().hex}"
+    saas.consume_usage(admin.id, "clip_count", 99, key)
+    summary = saas.usage_summary(admin.id)
+    assert summary["metrics"]["clip_count"]["used"] == 99
+
+
 def test_subscription_plan_and_actions():
     user = models.create_user(f"subscription_{uuid.uuid4().hex}@example.com", "password123")
     subscription = saas.set_subscription(user.id, "pro", "active", "manual")
