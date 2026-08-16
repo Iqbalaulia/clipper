@@ -10,6 +10,8 @@ import uuid
 import logging
 import secrets
 import smtplib
+from functools import wraps
+from typing import Optional
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from urllib.parse import urljoin
@@ -133,6 +135,10 @@ class _CurrentUser:
     def name(self):
         return self._user.name if self._user else None
 
+    @property
+    def is_admin(self):
+        return bool(self._user.is_admin) if self._user else False
+
 
 current_user = _CurrentUser()
 
@@ -140,6 +146,17 @@ current_user = _CurrentUser()
 def login_required(f):
     """Drop-in replacement for flask_login.login_required using JWT cookies."""
     return jwt_required()(f)
+
+
+def admin_required(f):
+    """Decorator that requires the current user to be an admin."""
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_admin:
+            return jsonify({"error": "Akses ditolak. Halaman ini khusus admin."}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def _generate_token() -> str:
@@ -390,12 +407,15 @@ def refresh():
 def me():
     if current_user.is_authenticated:
         user = current_user._user
+        if not user.is_active:
+            return jsonify({"authenticated": False, "user": None})
         return jsonify({
             "authenticated": True,
             "user": {
                 "id": user.id,
                 "email": user.email,
                 "name": user.name,
+                "is_admin": user.is_admin,
                 "email_verified": user.email_verified,
                 "avatar_url": user.avatar_url,
                 "timezone": user.timezone,
@@ -1739,6 +1759,187 @@ def midtrans_webhook():
         return jsonify(billing.process_webhook(request.get_json(force=True) or {}))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+# ── Admin helpers ──────────────────────────────────────────────────────────────
+
+
+def _get_storage_stats():
+    """Return total and per-user storage usage under OUTPUT_DIR."""
+    total = 0
+    per_user = {}
+    try:
+        for entry in os.listdir(OUTPUT_DIR):
+            user_path = os.path.join(OUTPUT_DIR, entry)
+            if not os.path.isdir(user_path):
+                continue
+            try:
+                user_id = int(entry)
+            except ValueError:
+                continue
+            size = 0
+            for root, _dirs, files in os.walk(user_path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    try:
+                        size += os.path.getsize(fp)
+                    except OSError:
+                        pass
+            per_user[user_id] = size
+            total += size
+    except OSError:
+        pass
+    return {"total_bytes": total, "per_user_bytes": per_user}
+
+
+def _tail_log_file(lines: int = 200, level: Optional[str] = None):
+    """Tail the global log file and optionally filter by level."""
+    log_path = os.path.join(LOGS_DIR, "clipper.log")
+    if not os.path.exists(log_path):
+        return []
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+    except OSError:
+        return []
+    # Filter by level substring, e.g. "ERROR"
+    if level:
+        all_lines = [ln for ln in all_lines if f"[{level.upper()}]" in ln]
+    return [ln.rstrip("\n") for ln in all_lines[-lines:]]
+
+
+# ── Admin API routes ───────────────────────────────────────────────────────────
+
+
+@app.route("/api/admin/stats")
+@admin_required
+def admin_stats():
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    storage = _get_storage_stats()
+    return jsonify({
+        "users": {
+            "total": models.count_users(),
+            "active": models.count_users(active_only=True),
+        },
+        "tasks": {
+            "today": models.count_tasks_since(today_start),
+            "this_month": models.count_tasks_since(month_start),
+            "by_status": models.count_tasks_by_status(),
+        },
+        "revenue": {
+            "total_paid": models.sum_revenue(status="paid"),
+            "this_month": models.sum_revenue(status="paid", since=month_start),
+        },
+        "queue": task_queue.queue_status(),
+        "storage": storage,
+    })
+
+
+@app.route("/api/admin/users")
+@admin_required
+def admin_users():
+    search = (request.args.get("search") or "").strip() or None
+    status = (request.args.get("status") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit", 50))
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        return jsonify({"error": "Parameter limit/offset tidak valid."}), 400
+    users = models.list_users(search=search, status=status, limit=limit, offset=offset)
+    total = models.count_users_filtered(search=search, status=status)
+    return jsonify({"users": users, "total": total, "limit": limit, "offset": offset})
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["PATCH"])
+@admin_required
+def admin_update_user(user_id: int):
+    data = request.get_json(force=True) or {}
+    if "is_active" in data:
+        user = models.update_user_status(user_id, bool(data["is_active"]))
+        if not user:
+            return jsonify({"error": "User tidak ditemukan."}), 404
+    if "is_admin" in data:
+        user = models.set_user_admin(user_id, bool(data["is_admin"]))
+        if not user:
+            return jsonify({"error": "User tidak ditemukan."}), 404
+    if "plan_code" in data:
+        try:
+            saas.set_subscription(user_id, data["plan_code"], status="active", provider="manual")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "user": {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "is_active": user.is_active,
+        "is_admin": user.is_admin,
+    }})
+
+
+@app.route("/api/admin/tasks")
+@admin_required
+def admin_tasks():
+    status = (request.args.get("status") or "").strip() or None
+    user_id = request.args.get("user_id", type=int)
+    try:
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        return jsonify({"error": "Parameter limit/offset tidak valid."}), 400
+    tasks = models.list_tasks_admin(status=status, user_id=user_id, limit=limit, offset=offset)
+    total = models.count_tasks_admin(status=status, user_id=user_id)
+    return jsonify({"tasks": tasks, "total": total, "limit": limit, "offset": offset})
+
+
+@app.route("/api/admin/invoices")
+@admin_required
+def admin_invoices():
+    status = (request.args.get("status") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit", 100))
+        offset = int(request.args.get("offset", 0))
+    except ValueError:
+        return jsonify({"error": "Parameter limit/offset tidak valid."}), 400
+    invoices = models.list_invoices_admin(status=status, limit=limit, offset=offset)
+    return jsonify({"invoices": invoices, "limit": limit, "offset": offset})
+
+
+@app.route("/api/admin/logs")
+@admin_required
+def admin_logs():
+    try:
+        lines = int(request.args.get("lines", 200))
+    except ValueError:
+        lines = 200
+    level = (request.args.get("level") or "").strip() or None
+    lines = max(1, min(lines, 1000))
+    return jsonify({"logs": _tail_log_file(lines=lines, level=level)})
+
+
+@app.route("/api/admin/plans")
+@admin_required
+def admin_plans():
+    return jsonify({"plans": saas.public_plans()})
+
+
+@app.route("/api/admin/plans/<plan_code>", methods=["PATCH"])
+@admin_required
+def admin_update_plan(plan_code: str):
+    if plan_code not in saas.PLANS:
+        return jsonify({"error": "Plan tidak dikenal."}), 400
+    data = request.get_json(force=True) or {}
+    allowed = {"name", "price", "currency", "limits"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "Tidak ada field yang bisa diupdate."}), 400
+    # Merge updates into stored plan overrides in settings
+    try:
+        saas.update_plan_override(plan_code, updates)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "plan": saas.public_plans()[plan_code]})
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────

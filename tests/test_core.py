@@ -428,3 +428,111 @@ def test_plans_usage_and_subscription_api():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── Admin dashboard tests ────────────────────────────────────────────────────
+
+
+def test_admin_me_returns_is_admin():
+    client = _auth_client()
+    email = f"admin_me_{uuid.uuid4().hex}@example.com"
+    res = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Admin Me",
+    })
+    assert res.status_code == 200
+    user_id = res.get_json()["user"]["id"]
+    models.set_user_admin(user_id, True)
+    res = client.get("/api/auth/me")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["authenticated"] is True
+    assert data["user"]["is_admin"] is True
+
+
+def test_admin_required_blocks_non_admin():
+    client = _auth_client()
+    email = f"non_admin_{uuid.uuid4().hex}@example.com"
+    client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Non Admin",
+    })
+    res = client.get("/api/admin/stats")
+    assert res.status_code == 403
+
+
+def test_admin_list_users():
+    client = _auth_client()
+    email = f"admin_list_{uuid.uuid4().hex}@example.com"
+    res = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Admin List",
+    })
+    user_id = res.get_json()["user"]["id"]
+    models.set_user_admin(user_id, True)
+    res = client.get("/api/admin/users")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert "users" in data
+    assert "total" in data
+    assert any(u["email"] == email for u in data["users"])
+
+
+def test_admin_suspend_user_blocks_login():
+    admin_client = _auth_client()
+    admin_email = f"admin_suspend_{uuid.uuid4().hex}@example.com"
+    res = admin_client.post("/api/auth/register", json={
+        "email": admin_email,
+        "password": "password123",
+        "name": "Admin Suspend",
+    })
+    admin_id = res.get_json()["user"]["id"]
+    models.set_user_admin(admin_id, True)
+
+    user_client = _auth_client()
+    email = f"suspend_{uuid.uuid4().hex}@example.com"
+    res = user_client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Suspend Me",
+    })
+    user_id = res.get_json()["user"]["id"]
+
+    # Suspend the first user using admin client
+    res = admin_client.patch(f"/api/admin/users/{user_id}", json={"is_active": False})
+    assert res.status_code == 200
+
+    # Login as suspended user should fail
+    res = user_client.post("/api/auth/login", json={
+        "email": email,
+        "password": "password123",
+    })
+    assert res.status_code == 403
+
+    # /api/auth/me should also report not authenticated
+    res = user_client.get("/api/auth/me")
+    assert res.status_code == 200
+    assert res.get_json()["authenticated"] is False
+
+
+def test_admin_stats_endpoint():
+    client = _auth_client()
+    email = f"admin_stats_{uuid.uuid4().hex}@example.com"
+    res = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "password123",
+        "name": "Admin Stats",
+    })
+    user_id = res.get_json()["user"]["id"]
+    models.set_user_admin(user_id, True)
+    res = client.get("/api/admin/stats")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert "users" in data
+    assert "tasks" in data
+    assert "revenue" in data
+    assert "queue" in data
+    assert "storage" in data

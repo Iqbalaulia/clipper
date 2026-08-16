@@ -111,6 +111,12 @@
         <span class="nav-item-icon">💡</span>
         Tips & Bantuan
       </div>
+
+      <div class="nav-section-label admin-nav-section" style="display:none;">Admin</div>
+      <div class="nav-item admin-nav-item" id="nav-admin" data-target="admin-fullscreen" style="display:none;">
+        <span class="nav-item-icon">🛡️</span>
+        Admin Dashboard
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -935,6 +941,8 @@
           </div>
         </div><!-- /tab-tips -->
 
+
+
       </div><!-- /panel-controls -->
 
       <!-- ═══ TAB: Results (moments, batch progress, gallery) ═══ -->
@@ -1069,6 +1077,116 @@
 
 </div><!-- /dashboard -->
 
+
+        <div id="admin-fullscreen" class="admin-fullscreen" style="display:none;">
+          <div class="admin-dashboard">
+            <div class="admin-header">
+              <p class="card-title">🛡️ Admin Dashboard</p>
+              <button class="btn btn-secondary btn-small" id="admin-close-btn">← Kembali ke App</button>
+            </div>
+
+            <div class="admin-subtabs">
+              <div class="admin-subtab active" data-admin-tab="overview">Overview</div>
+              <div class="admin-subtab" data-admin-tab="users">Users</div>
+              <div class="admin-subtab" data-admin-tab="tasks">Tasks</div>
+              <div class="admin-subtab" data-admin-tab="billing">Billing</div>
+              <div class="admin-subtab" data-admin-tab="logs">Logs</div>
+              <div class="admin-subtab" data-admin-tab="plans">Plans</div>
+            </div>
+
+            <div class="admin-tab-content active" id="admin-tab-overview">
+              <div class="admin-stats-grid" id="admin-stats-grid">
+                <div class="admin-stat-card"><div class="admin-stat-label">Total Users</div><div class="admin-stat-value" id="admin-stat-total-users">-</div></div>
+                <div class="admin-stat-card"><div class="admin-stat-label">Active Users</div><div class="admin-stat-value" id="admin-stat-active-users">-</div></div>
+                <div class="admin-stat-card"><div class="admin-stat-label">Tasks Today</div><div class="admin-stat-value" id="admin-stat-tasks-today">-</div></div>
+                <div class="admin-stat-card"><div class="admin-stat-label">Tasks This Month</div><div class="admin-stat-value" id="admin-stat-tasks-month">-</div></div>
+                <div class="admin-stat-card"><div class="admin-stat-label">Total Revenue</div><div class="admin-stat-value" id="admin-stat-revenue">-</div></div>
+                <div class="admin-stat-card"><div class="admin-stat-label">Storage Used</div><div class="admin-stat-value" id="admin-stat-storage">-</div></div>
+              </div>
+              <div class="admin-queue-card" id="admin-queue-card">
+                <p class="card-title">Queue Status</p>
+                <div id="admin-queue-status">Loading...</div>
+              </div>
+            </div>
+
+            <div class="admin-tab-content" id="admin-tab-users">
+              <div class="admin-toolbar">
+                <input type="text" id="admin-user-search" class="admin-search" placeholder="Search email or name...">
+                <select id="admin-user-status" class="admin-select">
+                  <option value="">All</option>
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+                <button class="btn btn-primary btn-small" id="admin-user-refresh">Refresh</button>
+              </div>
+              <div class="admin-table-wrap">
+                <table class="admin-table" id="admin-users-table">
+                  <thead><tr><th>ID</th><th>Email</th><th>Name</th><th>Status</th><th>Admin</th><th>Verified</th><th>Created</th><th>Actions</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="admin-pagination" id="admin-users-pagination"></div>
+            </div>
+
+            <div class="admin-tab-content" id="admin-tab-tasks">
+              <div class="admin-toolbar">
+                <select id="admin-task-status" class="admin-select">
+                  <option value="">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="downloading">Downloading</option>
+                  <option value="processing">Processing</option>
+                  <option value="done">Done</option>
+                  <option value="error">Error</option>
+                </select>
+                <button class="btn btn-primary btn-small" id="admin-task-refresh">Refresh</button>
+              </div>
+              <div class="admin-table-wrap">
+                <table class="admin-table" id="admin-tasks-table">
+                  <thead><tr><th>ID</th><th>User</th><th>Status</th><th>Progress</th><th>Error</th><th>Created</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="admin-tab-content" id="admin-tab-billing">
+              <div class="admin-toolbar">
+                <select id="admin-invoice-status" class="admin-select">
+                  <option value="">All</option>
+                  <option value="paid">Paid</option>
+                  <option value="pending">Pending</option>
+                  <option value="failed">Failed</option>
+                </select>
+                <button class="btn btn-primary btn-small" id="admin-invoice-refresh">Refresh</button>
+              </div>
+              <div class="admin-table-wrap">
+                <table class="admin-table" id="admin-invoices-table">
+                  <thead><tr><th>ID</th><th>User</th><th>Plan</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="admin-tab-content" id="admin-tab-logs">
+              <div class="admin-toolbar">
+                <select id="admin-log-level" class="admin-select">
+                  <option value="">All</option>
+                  <option value="ERROR">ERROR</option>
+                  <option value="WARNING">WARNING</option>
+                  <option value="INFO">INFO</option>
+                </select>
+                <button class="btn btn-primary btn-small" id="admin-log-refresh">Refresh</button>
+              </div>
+              <pre class="admin-log-viewer" id="admin-log-viewer"></pre>
+            </div>
+
+            <div class="admin-tab-content" id="admin-tab-plans">
+              <div class="admin-plans-grid" id="admin-plans-grid"></div>
+            </div>
+
+          </div>
+      </div><!-- /admin-fullscreen -->
+
+
 <!-- ── Clip Details Modal ── -->
 <div id="clip-details-modal" class="modal-overlay" style="display: none;">
   <div class="modal-content">
@@ -1183,5 +1301,6 @@
 </div>
 
 <script src="/static/app.js?v=3"></script>
+<script src="/static/admin_dashboard.js"></script>
 </body>
 </html>

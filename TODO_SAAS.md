@@ -62,13 +62,13 @@ Dokumen ini merinci fitur-fitur yang perlu dibangun untuk mengubah **Video Clipp
 ## P1 — Should-Have (Operational & Growth)
 
 ### Admin Dashboard
-- [ ] Halaman admin terpisah dengan auth khusus
-- [ ] List user dengan filter & search
-- [ ] Statistik: user aktif, task harian, revenue, storage usage
-- [ ] Monitoring worker queue & server health
-- [ ] Ban/suspend user
-- [ ] Lihat log error global
-- [ ] Manajemen plan & pricing dinamis
+- [x] Halaman admin terpisah dengan auth khusus
+- [x] List user dengan filter & search
+- [x] Statistik: user aktif, task harian, revenue, storage usage
+- [x] Monitoring worker queue & server health
+- [x] Ban/suspend user
+- [x] Lihat log error global
+- [x] Manajemen plan & pricing dinamis
 
 ### Email & Notifications
 - [ ] Email task selesai dengan link download

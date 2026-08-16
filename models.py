@@ -827,5 +827,187 @@ def get_task_by_thumbnail_file(filename: str, user_id: Optional[int] = None) -> 
         return get_task(row["id"], user_id=user_id) if row else None
 
 
+# ── Admin helpers ────────────────────────────────────────────────────────────
+
+
+def count_users(active_only: bool = False) -> int:
+    """Return total number of users."""
+    with _connect() as conn:
+        sql = "SELECT COUNT(*) FROM users"
+        params = []
+        if active_only:
+            sql += " WHERE is_active = 1"
+        row = conn.execute(sql, params).fetchone()
+        return row[0] if row else 0
+
+
+def list_users(
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list:
+    """List users for admin with optional search and status filter."""
+    with _connect() as conn:
+        where_clauses = []
+        params = []
+        if search:
+            where_clauses.append("(email LIKE ? OR name LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        if status == "active":
+            where_clauses.append("is_active = 1")
+        elif status == "suspended":
+            where_clauses.append("is_active = 0")
+        where = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        sql = f"""
+            SELECT id, email, name, is_active, is_admin, email_verified, avatar_url,
+                   timezone, language, created_at, updated_at
+            FROM users
+            {where}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_users_filtered(
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+) -> int:
+    """Return count of users matching the admin filters."""
+    with _connect() as conn:
+        where_clauses = []
+        params = []
+        if search:
+            where_clauses.append("(email LIKE ? OR name LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
+        if status == "active":
+            where_clauses.append("is_active = 1")
+        elif status == "suspended":
+            where_clauses.append("is_active = 0")
+        where = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        row = conn.execute(f"SELECT COUNT(*) FROM users {where}", params).fetchone()
+        return row[0] if row else 0
+
+
+def update_user_status(user_id: int, is_active: bool) -> Optional[User]:
+    """Suspend or reactivate a user account."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
+            (int(bool(is_active)), _now(), user_id),
+        )
+        conn.commit()
+    return get_user_by_id(user_id)
+
+
+def count_tasks_since(since: str, status: Optional[str] = None) -> int:
+    """Count tasks created since an ISO timestamp, optionally filtered by status."""
+    with _connect() as conn:
+        sql = "SELECT COUNT(*) FROM tasks WHERE created_at >= ?"
+        params = [since]
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        row = conn.execute(sql, params).fetchone()
+        return row[0] if row else 0
+
+
+def count_tasks_by_status() -> dict:
+    """Return task counts grouped by status."""
+    with _connect() as conn:
+        rows = conn.execute("SELECT status, COUNT(*) AS cnt FROM tasks GROUP BY status").fetchall()
+        return {r["status"]: r["cnt"] for r in rows}
+
+
+def list_tasks_admin(
+    status: Optional[str] = None,
+    user_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list:
+    """List tasks for admin with optional filters."""
+    with _connect() as conn:
+        where_clauses = []
+        params = []
+        if status:
+            where_clauses.append("status = ?")
+            params.append(status)
+        if user_id is not None:
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+        where = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        sql = f"""
+            SELECT id, user_id, status, progress, output_file, error,
+                   created_at, updated_at
+            FROM tasks
+            {where}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def count_tasks_admin(status: Optional[str] = None, user_id: Optional[int] = None) -> int:
+    """Count tasks matching admin filters."""
+    with _connect() as conn:
+        where_clauses = []
+        params = []
+        if status:
+            where_clauses.append("status = ?")
+            params.append(status)
+        if user_id is not None:
+            where_clauses.append("user_id = ?")
+            params.append(user_id)
+        where = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        row = conn.execute(f"SELECT COUNT(*) FROM tasks {where}", params).fetchone()
+        return row[0] if row else 0
+
+
+def list_invoices_admin(
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list:
+    """List invoices for admin with optional status filter."""
+    with _connect() as conn:
+        where_clauses = []
+        params = []
+        if status:
+            where_clauses.append("status = ?")
+            params.append(status)
+        where = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+        sql = f"""
+            SELECT id, user_id, plan_code, amount, currency, status,
+                   provider_reference, checkout_url, created_at, paid_at
+            FROM invoices
+            {where}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        params.extend([limit, offset])
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def sum_revenue(status: Optional[str] = "paid", since: Optional[str] = None) -> int:
+    """Return total revenue in smallest currency unit."""
+    with _connect() as conn:
+        sql = "SELECT COALESCE(SUM(amount), 0) FROM invoices WHERE 1=1"
+        params = []
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        if since:
+            sql += " AND created_at >= ?"
+            params.append(since)
+        row = conn.execute(sql, params).fetchone()
+        return int(row[0]) if row else 0
+
+
 # Initialize tables on import
 init_db()

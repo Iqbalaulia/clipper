@@ -5,6 +5,7 @@ const $ = id => document.getElementById(id);
 // ── State ────────────────────────────────────────────────────────────────
 let currentTaskId = null;
 let evtSource     = null;
+let currentUser   = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────
 const form            = $('clip-form');
@@ -249,13 +250,19 @@ async function checkAuth() {
     const res = await apiFetch('/api/auth/me');
     const data = await res.json();
     if (data.authenticated && data.user) {
+      currentUser = data.user;
       hideAuthOverlay();
       updateUserBanner(data.user, data.usage);
+      if (typeof toggleAdminNav === 'function') {
+        toggleAdminNav(data.user.is_admin === true);
+      }
       return true;
     }
   } catch (e) {
     // ignore, show overlay below
   }
+  currentUser = null;
+  toggleAdminNav(false);
   showAuthOverlay();
   return false;
 }
@@ -569,12 +576,24 @@ if (ctrlSubtitleSource) ctrlSubtitleSource.addEventListener('change', syncSubtit
 // ── Sidebar Navigation ───────────────────────────────────────────
 document.querySelectorAll('.nav-item[data-target]').forEach(item => {
   item.addEventListener('click', () => {
+    const targetId = item.dataset.target;
+
+    // Admin dashboard opens as a fullscreen overlay
+    if (targetId === 'admin-fullscreen') {
+      openAdminDashboard();
+      return;
+    }
+
+    // Close admin dashboard if open
+    if (typeof closeAdminDashboard === 'function') {
+      closeAdminDashboard();
+    }
+
     // Update active nav item
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     item.classList.add('active');
 
     // Show corresponding tab-page in panel-controls
-    const targetId = item.dataset.target;
     document.querySelectorAll('#panel-controls > .tab-page').forEach(page => {
       page.classList.toggle('active', page.id === targetId);
     });

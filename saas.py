@@ -28,6 +28,65 @@ PLANS = {
     },
 }
 
+_PLAN_OVERRIDE_KEY = "plan_overrides"
+
+
+def _load_plan_overrides():
+    """Load dynamic plan overrides from settings; returns a nested dict."""
+    raw = models.get_setting(_PLAN_OVERRIDE_KEY)
+    if not raw:
+        return {}
+    try:
+        overrides = json.loads(raw)
+        if not isinstance(overrides, dict):
+            return {}
+        return overrides
+    except json.JSONDecodeError:
+        return {}
+
+
+def get_plans():
+    """Return PLANS merged with dynamic overrides from settings."""
+    overrides = _load_plan_overrides()
+    merged = {}
+    for code, plan in PLANS.items():
+        merged[code] = {**plan, "limits": {**plan["limits"]}}
+        if code in overrides and isinstance(overrides[code], dict):
+            for key, value in overrides[code].items():
+                if key == "limits" and isinstance(value, dict):
+                    merged[code]["limits"].update(value)
+                elif key in {"name", "price", "currency", "trial_days"}:
+                    merged[code][key] = value
+    return merged
+
+
+def update_plan_override(plan_code, updates):
+    """Apply validated plan updates to dynamic overrides in settings."""
+    if plan_code not in PLANS:
+        raise ValueError("Plan tidak dikenal.")
+    allowed_top = {"name", "price", "currency", "trial_days"}
+    allowed_limits = set(PLANS[plan_code]["limits"].keys())
+    overrides = _load_plan_overrides()
+    if plan_code not in overrides or not isinstance(overrides.get(plan_code), dict):
+        overrides[plan_code] = {}
+    for key, value in updates.items():
+        if key == "limits":
+            if not isinstance(value, dict):
+                raise TypeError("limits harus berupa object.")
+            for limit_key, limit_value in value.items():
+                if limit_key not in allowed_limits:
+                    raise ValueError(f"Limit {limit_key} tidak dikenal.")
+                overrides[plan_code].setdefault("limits", {})[limit_key] = limit_value
+        elif key in allowed_top:
+            if key == "price" and not isinstance(value, (int, float)):
+                raise TypeError("price harus berupa angka.")
+            if key == "trial_days" and not isinstance(value, int):
+                raise TypeError("trial_days harus berupa integer.")
+            overrides[plan_code][key] = value
+        else:
+            raise ValueError(f"Field {key} tidak bisa diupdate.")
+    models.set_setting(_PLAN_OVERRIDE_KEY, json.dumps(overrides))
+
 
 def period_key(now=None):
     now = now or datetime.now(timezone.utc)
@@ -68,16 +127,17 @@ def get_subscription(user_id):
 
 
 def get_plan(user_id):
+    plans = get_plans()
     subscription = get_subscription(user_id)
     if subscription.get("status") in ("active", "trialing") and not subscription.get("paused_at"):
-        return PLANS.get(subscription.get("plan_code"), PLANS["free"])
-    return PLANS["free"]
+        return plans.get(subscription.get("plan_code"), plans["free"])
+    return plans["free"]
 
 
 def usage_summary(user_id):
     subscription = get_subscription(user_id)
     plan_code = subscription.get("plan_code", "free") if subscription.get("status") in ("active", "trialing") else "free"
-    plan = PLANS.get(plan_code, PLANS["free"])
+    plan = get_plans().get(plan_code, get_plans()["free"])
     with models._connect() as conn:
         rows = conn.execute(
             """SELECT metric, COALESCE(SUM(quantity), 0) AS used
@@ -244,4 +304,4 @@ def check_rate_limit(key, limit, window_seconds=60):
 
 
 def public_plans():
-    return [{"code": code, **plan} for code, plan in PLANS.items()]
+    return [{"code": code, **plan} for code, plan in get_plans().items()]
