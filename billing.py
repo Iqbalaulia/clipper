@@ -89,6 +89,18 @@ def process_webhook(payload):
             invoice["user_id"], invoice["plan_code"], "trialing" if trial_end else "active",
             "midtrans", payload.get("transaction_id"), trial_end=trial_end,
         )
+
+    # Notify user of payment outcome. Import lazily to avoid circular imports.
+    try:
+        import notifications
+        if invoice_status == "paid":
+            notifications.notify_payment_receipt(invoice["user_id"], invoice["id"])
+        elif invoice_status == "failed":
+            notifications.notify_payment_failed(invoice["user_id"], invoice["id"])
+    except Exception:
+        # Payment notifications are best-effort; never break webhook processing.
+        pass
+
     return {"duplicate": False, "status": invoice_status}
 
 

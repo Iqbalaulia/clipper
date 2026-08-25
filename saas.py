@@ -192,6 +192,24 @@ def consume_usage(user_id, metric, quantity, idempotency_key, task_id=None):
             (user_id, task_id, metric, quantity, period_key(), idempotency_key, models._now()),
         )
         conn.commit()
+
+    # Notify the user when a quota threshold (80% / 100%) is crossed.
+    # Import lazily to avoid a circular import with notifications.py.
+    try:
+        import notifications
+        summary = usage_summary(user_id)
+        metric_data = summary.get("metrics", {}).get(metric, {})
+        used = float(metric_data.get("used", 0))
+        limit = float(metric_data.get("limit", 0))
+        if limit > 0:
+            ratio = used / limit
+            for threshold in (80, 100):
+                if ratio >= threshold / 100.0:
+                    notifications.notify_quota_alert(user_id, metric, threshold)
+    except Exception:
+        # Quota alerts are best-effort; never break the core usage flow.
+        pass
+
     return usage_summary(user_id)
 
 

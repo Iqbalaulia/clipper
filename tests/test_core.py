@@ -5,6 +5,7 @@ tests/test_core.py — Smoke tests for the refactored Clipper backend.
 import os
 import sys
 import uuid
+import hashlib
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -18,6 +19,7 @@ import secure_store
 import billing
 import cloud_storage
 import saas
+import notifications
 
 
 def test_create_and_get_task():
@@ -536,3 +538,130 @@ def test_admin_stats_endpoint():
     assert "revenue" in data
     assert "queue" in data
     assert "storage" in data
+
+
+
+# ── Notification tests ───────────────────────────────────────────────────────
+
+
+def test_in_app_notification_crud():
+    user = models.create_user(f"notif_{uuid.uuid4().hex}@example.com", "password123")
+    nid = notifications.create_notification(user.id, "Test title", body="Test body", link="/?tab=manual")
+    assert nid > 0
+
+    unread = notifications.count_unread_notifications(user.id)
+    assert unread == 1
+
+    items = notifications.list_notifications(user.id)
+    assert len(items) == 1
+    assert items[0]["title"] == "Test title"
+    assert items[0]["is_read"] is False
+
+    notifications.mark_notification_read(nid, user.id)
+    assert notifications.count_unread_notifications(user.id) == 0
+
+    notifications.mark_all_notifications_read(user.id)
+    assert notifications.count_unread_notifications(user.id) == 0
+
+
+def test_notification_preferences_defaults_and_update():
+    user = models.create_user(f"pref_{uuid.uuid4().hex}@example.com", "password123")
+    prefs = models.get_notification_preferences(user.id)
+    assert prefs["email_task_done"] is True
+    assert prefs["email_quota_alert"] is True
+    assert prefs["email_payment"] is True
+    assert prefs["email_marketing"] is False
+    assert prefs["in_app_enabled"] is True
+
+    updated = models.update_notification_preferences(user.id, {"email_task_done": False, "email_marketing": True})
+    assert updated["email_task_done"] is False
+    assert updated["email_marketing"] is True
+    assert updated["email_quota_alert"] is True
+
+
+def test_quota_alert_idempotency():
+    user = models.create_user(f"quota_alert_{uuid.uuid4().hex}@example.com", "password123")
+    # Consume 5 clip_count to hit the free plan limit (100%).
+    # consume_usage will automatically fire 80% and 100% alerts.
+    for i in range(5):
+        saas.consume_usage(user.id, "clip_count", 1, f"quota-alert-{uuid.uuid4().hex}-{i}")
+
+    event_key_100 = f"{saas.period_key()}:clip_count:100"
+    assert models.was_notification_sent(user.id, "email:quota", event_key_100)
+
+    # Re-issuing the same alert should be suppressed.
+    notifications.notify_quota_alert(user.id, "clip_count", 100)
+
+    # Should still be exactly one 100% in-app notification.
+    items = notifications.list_notifications(user.id)
+    hundred_items = [n for n in items if "habis" in n["title"]]
+    assert len(hundred_items) == 1
+
+
+def test_task_completion_creates_in_app_notification():
+    user = models.create_user(f"task_notif_{uuid.uuid4().hex}@example.com", "password123")
+    task_id = f"task-notif-{uuid.uuid4().hex}"
+    models.create_task(task_id, user_id=user.id, params={})
+    models.update_task(task_id, status="done", progress=100, output_file=f"clip_{task_id}.mp4")
+
+    notifications.notify_task_completed(user.id, task_id)
+    items = notifications.list_notifications(user.id)
+    assert any(n["title"] == "Clip selesai diproses" for n in items)
+
+
+def test_payment_webhook_triggers_notification():
+    user = models.create_user(f"pay_notif_{uuid.uuid4().hex}@example.com", "password123")
+    invoice_id = f"INV-{uuid.uuid4().hex[:20].upper()}"
+    with models._connect() as conn:
+        conn.execute(
+            """INSERT INTO invoices (id, user_id, plan_code, amount, currency, status, provider_reference, checkout_url, created_at)
+               VALUES (?, ?, 'pro', 99000, 'IDR', 'pending', 'tok-test', 'http://checkout', ?)""",
+            (invoice_id, user.id, models._now()),
+        )
+        conn.commit()
+
+    # Simulate a failed payment webhook.
+    billing.process_webhook({
+        "order_id": invoice_id,
+        "transaction_status": "deny",
+        "status_code": "200",
+        "gross_amount": "99000",
+        "signature_key": hashlib.sha512(f"{invoice_id}20099000{os.environ.get('MIDTRANS_SERVER_KEY', '')}".encode()).hexdigest(),
+    })
+
+    items = notifications.list_notifications(user.id)
+    assert any("Pembayaran gagal" in n["title"] for n in items)
+
+
+def test_notification_api_endpoints():
+    client = _auth_client()
+    email = f"notif_api_{uuid.uuid4().hex}@example.com"
+    res = client.post("/api/auth/register", json={"email": email, "password": "password123", "name": "Notif API"})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert "unread_notifications" in data
+
+    # Create a notification directly (mark welcome notification read first).
+    user_id = data["user"]["id"]
+    notifications.mark_all_notifications_read(user_id)
+    nid = notifications.create_notification(user_id, "API Test", body="API body", link="/?tab=manual")
+
+    res = client.get("/api/notifications/unread-count")
+    assert res.status_code == 200
+    assert res.get_json()["unread_count"] == 1
+
+    res = client.get("/api/notifications")
+    assert res.status_code == 200
+    items = res.get_json()["notifications"]
+    assert any(n["title"] == "API Test" for n in items)
+
+    res = client.post(f"/api/notifications/{nid}/read")
+    assert res.status_code == 200
+
+    res = client.get("/api/notifications/unread-count")
+    assert res.get_json()["unread_count"] == 0
+
+    res = client.get("/api/notifications/preferences")
+    assert res.status_code == 200
+    prefs = res.get_json()["preferences"]
+    assert prefs["email_task_done"] is True

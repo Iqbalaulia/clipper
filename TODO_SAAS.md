@@ -71,11 +71,11 @@ Dokumen ini merinci fitur-fitur yang perlu dibangun untuk mengubah **Video Clipp
 - [x] Manajemen plan & pricing dinamis
 
 ### Email & Notifications
-- [ ] Email task selesai dengan link download
-- [ ] Email quota 80% / 100%
-- [ ] Welcome email & onboarding
-- [ ] Payment receipt & failed payment reminder
-- [ ] Notifikasi in-app (badge/toast)
+- [x] Email task selesai dengan link download
+- [x] Email quota 80% / 100%
+- [x] Welcome email & onboarding
+- [x] Payment receipt & failed payment reminder
+- [x] Notifikasi in-app (badge/toast)
 
 ### Project / Folder / Asset Library
 - [ ] User bisa membuat project/folder

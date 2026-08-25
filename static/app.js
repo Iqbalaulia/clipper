@@ -112,6 +112,14 @@ const quotaBadge      = $('quota-badge');
 const btnUpgrade      = $('btn-upgrade');
 const socialLogin     = $('social-login');
 const socialLoginButtons = $('social-login-buttons');
+
+// Notification refs
+const notificationBell = $('notification-bell');
+const notificationDropdown = $('notification-dropdown');
+const notificationBadge = $('notification-badge');
+const notificationList = $('notification-list');
+const notificationMarkAll = $('notification-mark-all');
+
 let authMode = 'login'; // 'login' | 'register' | 'forgot' | 'reset' | 'verify'
 
 // ═══════════════════════════════════════════════════════════════════
@@ -167,6 +175,125 @@ function updateUserBanner(user, usage) {
   userNameEl.textContent = user.name || user.email;
   userBanner.style.display = 'flex';
   updateQuota(usage);
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+function formatRelativeTime(iso) {
+  if (!iso) return '';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return 'baru saja';
+  if (diff < 3600) return `${Math.floor(diff / 60)} menit yang lalu`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} jam yang lalu`;
+  return `${Math.floor(diff / 86400)} hari yang lalu`;
+}
+
+async function fetchUnreadCount() {
+  try {
+    const res = await apiFetch('/api/notifications/unread-count');
+    const data = await res.json();
+    updateNotificationBadge(data.unread_count || 0);
+  } catch (e) { /* ignore */ }
+}
+
+function updateNotificationBadge(count) {
+  if (!notificationBadge) return;
+  if (count > 0) {
+    notificationBadge.textContent = count > 99 ? '99+' : count;
+    notificationBadge.style.display = 'flex';
+  } else {
+    notificationBadge.style.display = 'none';
+  }
+}
+
+async function fetchNotifications() {
+  try {
+    const res = await apiFetch('/api/notifications?limit=20');
+    const data = await res.json();
+    renderNotifications(data.notifications || []);
+  } catch (e) { /* ignore */ }
+}
+
+function renderNotifications(items) {
+  if (!notificationList) return;
+  if (!items.length) {
+    notificationList.innerHTML = '<div class="notification-empty">Belum ada notifikasi</div>';
+    return;
+  }
+  notificationList.innerHTML = items.map(n => `
+    <div class="notification-item ${n.is_read ? '' : 'unread'}" data-id="${n.id}" data-link="${n.link || ''}">
+      <div class="notification-item-title">${escapeHtml(n.title)}</div>
+      ${n.body ? `<div class="notification-item-body">${escapeHtml(n.body)}</div>` : ''}
+      <div class="notification-item-time">${formatRelativeTime(n.created_at)}</div>
+    </div>
+  `).join('');
+
+  notificationList.querySelectorAll('.notification-item').forEach(el => {
+    el.addEventListener('click', async () => {
+      const id = el.dataset.id;
+      const link = el.dataset.link;
+      try {
+        await apiFetch(`/api/notifications/${id}/read`, { method: 'POST' });
+        el.classList.remove('unread');
+        fetchUnreadCount();
+        if (link) {
+          if (link.startsWith('/?')) {
+            window.location.href = link;
+          } else {
+            window.location.href = link;
+          }
+        }
+      } catch (e) { /* ignore */ }
+    });
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+function showToast(title, body = '', kind = 'info', duration = 5000) {
+  const toast = document.createElement('div');
+  toast.className = `notification-toast ${kind}`;
+  toast.innerHTML = `<strong>${escapeHtml(title)}</strong>${body ? `<p>${escapeHtml(body)}</p>` : ''}`;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+function initNotifications() {
+  if (!notificationBell) return;
+
+  notificationBell.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = notificationDropdown.style.display === 'block';
+    notificationDropdown.style.display = isOpen ? 'none' : 'block';
+    if (!isOpen) fetchNotifications();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (notificationDropdown && !notificationBell.contains(e.target) && !notificationDropdown.contains(e.target)) {
+      notificationDropdown.style.display = 'none';
+    }
+  });
+
+  if (notificationMarkAll) {
+    notificationMarkAll.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await apiFetch('/api/notifications/mark-all-read', { method: 'POST' });
+        fetchNotifications();
+        updateNotificationBadge(0);
+      } catch (e) { /* ignore */ }
+    });
+  }
+
+  fetchUnreadCount();
+  setInterval(fetchUnreadCount, 30000);
 }
 
 async function loadSocialProviders() {
@@ -253,6 +380,8 @@ async function checkAuth() {
       currentUser = data.user;
       hideAuthOverlay();
       updateUserBanner(data.user, data.usage);
+      updateNotificationBadge(data.unread_notifications || 0);
+      initNotifications();
       if (typeof toggleAdminNav === 'function') {
         toggleAdminNav(data.user.is_admin === true);
       }
@@ -460,7 +589,8 @@ async function loadBilling() {
     if (billingStatus) billingStatus.textContent = (sub.status || 'active').toUpperCase();
     updateQuota(data.usage);
     if (pricingPlans) {
-      pricingPlans.innerHTML = (plansData.plans || []).filter(plan => plan.code !== 'free').map(plan => `
+      const billingNotice = plansData.billing_configured ? '' : `<div class="billing-notice">Payment gateway belum dikonfigurasi. Hubungi admin untuk mengaktifkan subscription.</div>`;
+      pricingPlans.innerHTML = billingNotice + (plansData.plans || []).filter(plan => plan.code !== 'free').map(plan => `
         <div class="pricing-plan">
           <strong>${plan.name}</strong><span>Rp${Number(plan.price).toLocaleString('id-ID')}/bulan</span>
           <button type="button" class="btn btn-primary btn-small plan-checkout" data-plan="${plan.code}" ${plansData.billing_configured ? '' : 'disabled'}>PILIH</button>
@@ -992,6 +1122,8 @@ function handleUpdate(data) {
     setLoading(false);
     showDownload(data.file, data.download_url || data.clip_url);
     showTimelineProgress(false);
+    showToast('Clip selesai!', 'Klip Anda sudah siap diunduh.', 'success');
+    fetchUnreadCount();
 
     // Fetch extended metadata (virality score + thumbnail) for single clip
     if (currentTaskId) {
@@ -1028,8 +1160,13 @@ function handleUpdate(data) {
   if (data.status === 'error' || data.status === 'cancelled') {
     evtSource.close();
     setLoading(false);
-    showError(data.status === 'cancelled' ? 'Proses dibatalkan.' : (data.error || 'Terjadi kesalahan.'));
+    const isCancelled = data.status === 'cancelled';
+    showError(isCancelled ? 'Proses dibatalkan.' : (data.error || 'Terjadi kesalahan.'));
     showTimelineProgress(false);
+    if (!isCancelled) {
+      showToast('Clip gagal diproses', data.error || 'Terjadi kesalahan.', 'error');
+      fetchUnreadCount();
+    }
     // Go back to info or empty
     if (cachedVideoInfo) {
       switchWorkspaceState('info');

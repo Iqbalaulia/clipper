@@ -17,6 +17,7 @@ import models
 import clipper
 import runner
 import secure_store
+import notifications
 
 logger = logging.getLogger("clipper")
 
@@ -167,6 +168,23 @@ class TaskQueue:
             if task and task.get("status") == "cancelling":
                 models.update_task(task_id, status="cancelled", progress=0)
                 logger.info("Task %s finalized as cancelled", task_id)
+
+            # Notify user of task completion/failure (fire-and-forget)
+            try:
+                if task and task.get("status") == "done":
+                    threading.Thread(
+                        target=notifications.notify_task_completed,
+                        args=(item.user_id, task_id),
+                        daemon=True,
+                    ).start()
+                elif task and task.get("status") == "error":
+                    threading.Thread(
+                        target=notifications.notify_task_failed,
+                        args=(item.user_id, task_id),
+                        daemon=True,
+                    ).start()
+            except Exception:
+                logger.exception("Failed to enqueue notification for task %s", task_id)
 
     @property
     def running_count(self) -> int:

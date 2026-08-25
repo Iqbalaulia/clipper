@@ -253,6 +253,38 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            link TEXT,
+            kind TEXT NOT NULL DEFAULT 'info',
+            is_read INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS notification_preferences (
+            user_id INTEGER PRIMARY KEY,
+            email_task_done INTEGER NOT NULL DEFAULT 1,
+            email_quota_alert INTEGER NOT NULL DEFAULT 1,
+            email_payment INTEGER NOT NULL DEFAULT 1,
+            email_marketing INTEGER NOT NULL DEFAULT 0,
+            in_app_enabled INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS notification_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            channel TEXT NOT NULL,
+            event_key TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, channel, event_key)
+        );
         """
     )
     # 2. Backward-compatible migrations: add columns introduced by later features.
@@ -280,6 +312,8 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
         CREATE INDEX IF NOT EXISTS idx_assets_user_task ON assets(user_id, task_id);
         CREATE INDEX IF NOT EXISTS idx_usage_user_period ON usage_events(user_id, period_key, metric);
+        CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_notification_log_lookup ON notification_log(user_id, channel, event_key);
         """
     )
     conn.commit()
@@ -1007,6 +1041,90 @@ def sum_revenue(status: Optional[str] = "paid", since: Optional[str] = None) -> 
             params.append(since)
         row = conn.execute(sql, params).fetchone()
         return int(row[0]) if row else 0
+
+
+# ── Notification helpers ─────────────────────────────────────────────────────
+
+
+def get_notification_preferences(user_id: int) -> dict:
+    """Return notification preferences for a user, creating defaults if missing."""
+    defaults = {
+        "email_task_done": 1,
+        "email_quota_alert": 1,
+        "email_payment": 1,
+        "email_marketing": 0,
+        "in_app_enabled": 1,
+    }
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT email_task_done, email_quota_alert, email_payment, email_marketing, in_app_enabled FROM notification_preferences WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row:
+            return {key: bool(row[key]) for key in defaults}
+        return {key: bool(value) for key, value in defaults.items()}
+
+
+def update_notification_preferences(user_id: int, prefs: dict) -> dict:
+    """Update notification preferences for a user."""
+    allowed = {"email_task_done", "email_quota_alert", "email_payment", "email_marketing", "in_app_enabled"}
+    updates = {k: int(bool(v)) for k, v in prefs.items() if k in allowed}
+    if not updates:
+        return get_notification_preferences(user_id)
+    current = get_notification_preferences(user_id)
+    current.update({k: bool(v) for k, v in updates.items()})
+    updates.update({k: int(v) for k, v in current.items() if k in allowed})
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO notification_preferences
+                (user_id, email_task_done, email_quota_alert, email_payment, email_marketing, in_app_enabled, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                email_task_done = excluded.email_task_done,
+                email_quota_alert = excluded.email_quota_alert,
+                email_payment = excluded.email_payment,
+                email_marketing = excluded.email_marketing,
+                in_app_enabled = excluded.in_app_enabled,
+                updated_at = excluded.updated_at
+            """,
+            (
+                user_id,
+                updates["email_task_done"],
+                updates["email_quota_alert"],
+                updates["email_payment"],
+                updates["email_marketing"],
+                updates["in_app_enabled"],
+                _now(),
+            ),
+        )
+        conn.commit()
+    return current
+
+
+def log_notification_sent(user_id: int, channel: str, event_key: str) -> bool:
+    """Record that a notification was sent. Returns True on first send."""
+    with _connect() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO notification_log (user_id, channel, event_key, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, channel, event_key, _now()),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            return False
+
+
+def was_notification_sent(user_id: int, channel: str, event_key: str) -> bool:
+    """Check whether a notification event has already been logged."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM notification_log WHERE user_id = ? AND channel = ? AND event_key = ?",
+            (user_id, channel, event_key),
+        ).fetchone()
+        return row is not None
 
 
 # Initialize tables on import

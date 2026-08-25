@@ -18,6 +18,7 @@ from urllib.parse import urljoin
 import requests
 import subprocess
 import shutil
+import threading
 from flask import (
     Flask,
     render_template,
@@ -48,6 +49,7 @@ import billing
 import cloud_storage
 import saas
 import social_auth
+import notifications
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
@@ -344,11 +346,18 @@ def register():
     models.set_email_verification_token(user.id, verification_token, expiry)
     email_sent = _send_verification_email(user, verification_token)
 
+    # Welcome notification + onboarding email (email is sent asynchronously)
+    try:
+        notifications.notify_welcome(user.id)
+    except Exception:
+        logger.exception("Failed to send welcome notification for user %s", user.id)
+
     response = jsonify({
         "success": True,
         "user": {"id": user.id, "email": user.email, "name": user.name},
         "email_verification_required": app.config["EMAIL_VERIFICATION_REQUIRED"],
         "email_verification_sent": email_sent,
+        "unread_notifications": notifications.count_unread_notifications(user.id),
     })
     _set_auth_cookies(response, user.id)
     return response
@@ -425,8 +434,57 @@ def me():
             "usage": saas.usage_summary(user.id),
             "subscription": saas.get_subscription(user.id),
             "social_providers": social_auth.configured_providers(),
+            "unread_notifications": notifications.count_unread_notifications(user.id),
         })
     return jsonify({"authenticated": False, "user": None})
+
+
+@app.route("/api/notifications")
+@login_required
+def list_notifications():
+    """Return in-app notifications for the current user."""
+    limit = request.args.get("limit", 50, type=int)
+    unread_only = request.args.get("unread_only", "false").lower() == "true"
+    return jsonify({
+        "notifications": notifications.list_notifications(_current_user_id(), limit=limit, unread_only=unread_only),
+    })
+
+
+@app.route("/api/notifications/unread-count")
+@login_required
+def unread_count():
+    """Return the unread notification count for the current user."""
+    return jsonify({"unread_count": notifications.count_unread_notifications(_current_user_id())})
+
+
+@app.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
+@login_required
+def mark_notification_read(notification_id: int):
+    """Mark a single notification as read."""
+    ok = notifications.mark_notification_read(notification_id, _current_user_id())
+    if not ok:
+        return jsonify({"error": "Notifikasi tidak ditemukan."}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/api/notifications/mark-all-read", methods=["POST"])
+@login_required
+def mark_all_notifications_read():
+    """Mark all notifications for the current user as read."""
+    count = notifications.mark_all_notifications_read(_current_user_id())
+    return jsonify({"success": True, "marked_count": count})
+
+
+@app.route("/api/notifications/preferences", methods=["GET", "POST"])
+@login_required
+def notification_preferences():
+    """Get or update notification preferences."""
+    user_id = _current_user_id()
+    if request.method == "GET":
+        return jsonify({"preferences": models.get_notification_preferences(user_id)})
+    data = request.get_json(force=True) or {}
+    prefs = models.update_notification_preferences(user_id, data)
+    return jsonify({"success": True, "preferences": prefs})
 
 
 @app.route("/api/auth/social/providers")

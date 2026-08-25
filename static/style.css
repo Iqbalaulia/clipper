@@ -90,6 +90,7 @@ body {
 .billing-actions { display: flex; gap: 6px; margin-top: 10px; }
 .invoice-list { margin-top: 12px; max-height: 100px; overflow: auto; font: 11px 'Space Mono', monospace; }
 .invoice-row { display: flex; justify-content: space-between; border-top: 1px solid #000; padding: 5px 0; }
+.billing-notice { grid-column: 1 / -1; padding: 10px; background: #fff7cc; border: 2px solid #000; font: 11px 'Space Mono', monospace; margin-bottom: 4px; }
 
 h1, h2, h3 {
   font-family: 'Archivo Black', Impact, sans-serif;
@@ -2437,6 +2438,14 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   color: var(--rb-white);
 }
 
+.btn:disabled {
+  background: var(--rb-disabled-bg);
+  color: #666;
+  border-color: var(--rb-disabled-bd);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 /* ── Cookies Card Styling ──────────────────────────────── */
 .cookies-card-icon {
   background: var(--rb-warning) !important;
@@ -2782,6 +2791,134 @@ h4 { font-family: 'Work Sans', sans-serif; font-size: 22px; font-weight: 600; li
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.notification-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--rb-black);
+  background: var(--rb-white);
+  cursor: pointer;
+}
+
+.notification-bell:hover {
+  background: var(--rb-black);
+  color: var(--rb-white);
+}
+
+.notification-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background: var(--rb-error);
+  color: var(--rb-white);
+  font: 700 10px 'Space Mono', monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--rb-black);
+}
+
+.notification-dropdown {
+  position: absolute;
+  top: var(--topbar-height);
+  right: 16px;
+  width: 340px;
+  max-height: 420px;
+  background: var(--rb-white);
+  border: 3px solid var(--rb-black);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--rb-black);
+  background: var(--rb-sunken);
+}
+
+.notification-header strong {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: .9rem;
+}
+
+.notification-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.notification-empty {
+  padding: 20px;
+  text-align: center;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+
+.notification-item {
+  padding: 12px;
+  border-bottom: 1px solid var(--rb-black);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notification-item:hover {
+  background: var(--rb-sunken-hover);
+}
+
+.notification-item.unread {
+  background: #f7f7ff;
+  border-left: 4px solid var(--rb-black);
+}
+
+.notification-item-title {
+  font-weight: 700;
+  font-size: .85rem;
+}
+
+.notification-item-body {
+  font-size: .75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.notification-item-time {
+  font: 10px 'Space Mono', monospace;
+  color: #666;
+}
+
+.notification-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 300px;
+  padding: 14px;
+  background: var(--rb-white);
+  border: 3px solid var(--rb-black);
+  z-index: 200;
+  cursor: pointer;
+  animation: slideIn .2s ease;
+}
+
+.notification-toast.success { border-color: var(--rb-success); }
+.notification-toast.error { border-color: var(--rb-error); }
+.notification-toast.warning { border-color: var(--rb-warning); }
+
+@keyframes slideIn {
+  from { transform: translateX(120%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .btn-small {
