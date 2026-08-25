@@ -285,6 +285,79 @@ def _init_tables(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             UNIQUE(user_id, channel, event_key)
         );
+
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            stored_filename TEXT NOT NULL,
+            content_type TEXT,
+            byte_size INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS saved_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            data TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, kind, name),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS webhooks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            url TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            events TEXT NOT NULL DEFAULT '*',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            webhook_id INTEGER NOT NULL,
+            event TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_status_code INTEGER,
+            last_error TEXT,
+            next_attempt_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (webhook_id) REFERENCES webhooks(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            prefix TEXT NOT NULL,
+            key_hash TEXT NOT NULL UNIQUE,
+            last_used_at TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         """
     )
     # 2. Backward-compatible migrations: add columns introduced by later features.
@@ -293,6 +366,7 @@ def _init_tables(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "tasks", "virality_reason", "TEXT")
     _add_column_if_missing(conn, "tasks", "thumbnail_file", "TEXT")
     _add_column_if_missing(conn, "tasks", "moment_index", "INTEGER DEFAULT 0")
+    _add_column_if_missing(conn, "tasks", "project_id", "INTEGER")
     _add_column_if_missing(conn, "users", "is_admin", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "users", "email_verified", "INTEGER NOT NULL DEFAULT 0")
     _add_column_if_missing(conn, "users", "email_verification_token", "TEXT")
@@ -314,6 +388,13 @@ def _init_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_usage_user_period ON usage_events(user_id, period_key, metric);
         CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_notification_log_lookup ON notification_log(user_id, channel, event_key);
+        CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_user_assets_user ON user_assets(user_id, kind);
+        CREATE INDEX IF NOT EXISTS idx_saved_configs_user ON saved_configs(user_id, kind);
+        CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhooks(user_id, is_active);
+        CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries(status, next_attempt_at);
+        CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
         """
     )
     conn.commit()
@@ -352,6 +433,7 @@ def create_task(
     virality_reason: Optional[str] = None,
     thumbnail_file: Optional[str] = None,
     moment_index: int = 0,
+    project_id: Optional[int] = None,
 ) -> dict:
     """Create a new task row and return its state."""
     params = params or {}
@@ -361,13 +443,13 @@ def create_task(
             """
             INSERT INTO tasks (
                 id, user_id, status, progress, output_file, error, params, logs,
-                created_at, updated_at, virality_score, virality_reason, thumbnail_file, moment_index
+                created_at, updated_at, virality_score, virality_reason, thumbnail_file, moment_index, project_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 task_id, user_id, "pending", 0, None, None, json.dumps(params), "[]",
-                now, now, virality_score, virality_reason, thumbnail_file, moment_index,
+                now, now, virality_score, virality_reason, thumbnail_file, moment_index, project_id,
             ),
         )
         conn.commit()
@@ -380,7 +462,7 @@ def get_task(task_id: str, user_id: Optional[int] = None) -> Optional[dict]:
         sql = """
             SELECT
                 id, user_id, status, progress, output_file, error, params, created_at, updated_at,
-                virality_score, virality_reason, thumbnail_file, moment_index
+                virality_score, virality_reason, thumbnail_file, moment_index, project_id
             FROM tasks WHERE id = ?
         """
         params = [task_id]
@@ -408,7 +490,7 @@ def update_task(task_id: str, **kwargs) -> bool:
     """Update one or more task fields."""
     allowed = {
         "status", "progress", "output_file", "error",
-        "virality_score", "virality_reason", "thumbnail_file", "moment_index",
+        "virality_score", "virality_reason", "thumbnail_file", "moment_index", "project_id",
     }
     fields = {k: v for k, v in kwargs.items() if k in allowed}
     if not fields:
@@ -439,8 +521,8 @@ def append_log(task_id: str, message: str) -> None:
         conn.commit()
 
 
-def list_tasks(status: Optional[str] = None, user_id: Optional[int] = None, limit: int = 100) -> list:
-    """List tasks, optionally filtered by status and/or user."""
+def list_tasks(status: Optional[str] = None, user_id: Optional[int] = None, limit: int = 100, project_id: Optional[int] = None) -> list:
+    """List tasks, optionally filtered by status and/or user and/or project."""
     with _connect() as conn:
         where_clauses = []
         params = []
@@ -450,6 +532,9 @@ def list_tasks(status: Optional[str] = None, user_id: Optional[int] = None, limi
         if user_id is not None:
             where_clauses.append("user_id = ?")
             params.append(user_id)
+        if project_id is not None:
+            where_clauses.append("project_id = ?")
+            params.append(project_id)
 
         where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
         sql = f"SELECT id FROM tasks {where} ORDER BY updated_at DESC LIMIT ?"

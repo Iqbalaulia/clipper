@@ -20,6 +20,9 @@ import billing
 import cloud_storage
 import saas
 import notifications
+import library
+import webhooks
+import apikeys
 
 
 def test_create_and_get_task():
@@ -665,3 +668,264 @@ def test_notification_api_endpoints():
     assert res.status_code == 200
     prefs = res.get_json()["preferences"]
     assert prefs["email_task_done"] is True
+
+
+# ── Project / Folder / Asset Library tests ───────────────────────────────────
+
+
+def test_project_crud_and_task_assignment():
+    user = models.create_user(f"proj_{uuid.uuid4().hex}@example.com", "password123")
+    other = models.create_user(f"proj_other_{uuid.uuid4().hex}@example.com", "password123")
+
+    project = library.create_project(user.id, "Podcast Klip", "Klip dari podcast")
+    assert project["name"] == "Podcast Klip"
+    assert library.get_project(other.id, project["id"]) is None  # isolated
+
+    updated = library.update_project(user.id, project["id"], name="Podcast Clips")
+    assert updated["name"] == "Podcast Clips"
+    assert library.list_projects(user.id)[0]["id"] == project["id"]
+
+    task_id = f"proj-task-{uuid.uuid4().hex}"
+    models.create_task(task_id, user_id=user.id, params={})
+    assert library.assign_task_to_project(user.id, task_id, project["id"])
+    tasks = library.list_project_tasks(user.id, project["id"])
+    assert any(t["id"] == task_id for t in tasks)
+    assert tasks[0]["project_id"] == project["id"]
+
+    # Unassign
+    assert library.assign_task_to_project(user.id, task_id, None)
+    assert models.get_task(task_id, user_id=user.id)["project_id"] is None
+
+    # Deleting the project detaches (not deletes) its tasks
+    library.assign_task_to_project(user.id, task_id, project["id"])
+    assert library.delete_project(user.id, project["id"])
+    assert models.get_task(task_id, user_id=user.id) is not None
+    assert models.get_task(task_id, user_id=user.id)["project_id"] is None
+    assert library.get_project(user.id, project["id"]) is None
+    models.delete_task(task_id)
+
+
+def test_custom_asset_upload_list_delete():
+    user = models.create_user(f"asset_lib_{uuid.uuid4().hex}@example.com", "password123")
+    asset = library.save_asset(user.id, "bgm", "track.mp3", b"ID3audio", "audio/mpeg")
+    assert asset["kind"] == "bgm"
+    assert library.list_assets(user.id, "bgm")[0]["id"] == asset["id"]
+    assert os.path.isfile(library.asset_path(user.id, asset["id"]))
+    assert library.delete_asset(user.id, asset["id"])
+    assert library.get_asset(user.id, asset["id"]) is None
+    assert not os.path.isfile(os.path.join(secure_store.user_private_dir(user.id), "assets", asset["stored_filename"]))
+
+    # Invalid kind / extension rejected
+    with pytest.raises(ValueError):
+        library.save_asset(user.id, "unknown", "x.bin", b"x")
+    with pytest.raises(ValueError):
+        library.save_asset(user.id, "bgm", "track.exe", b"x")
+
+
+def test_saved_configs_presets_and_templates():
+    user = models.create_user(f"cfg_{uuid.uuid4().hex}@example.com", "password123")
+    preset = library.save_config(user.id, "preset", "Viral Subs", {
+        "subtitle_enabled": True, "subtitle_style": "standard", "sub_fontsize": "22",
+    })
+    assert preset["data"]["subtitle_enabled"] is True
+    # Upsert by name overwrites
+    library.save_config(user.id, "preset", "Viral Subs", {"subtitle_enabled": False})
+    assert library.get_config(user.id, "preset", "Viral Subs")["data"]["subtitle_enabled"] is False
+
+    template = library.save_config(user.id, "template", "Reels 1080", {"output_resolution": "1080"})
+    assert {c["name"] for c in library.list_configs(user.id, "preset")} == {"Viral Subs"}
+    assert library.list_configs(user.id, "template")[0]["id"] == template["id"]
+    assert library.delete_config(user.id, template["id"])
+    assert library.list_configs(user.id, "template") == []
+    with pytest.raises(ValueError):
+        library.save_config(user.id, "bogus", "x", {})
+
+
+def test_projects_api_endpoints():
+    client, _ = _registered_client("library-api")
+    res = client.post("/api/projects", json={"name": "API Project", "description": "via API"})
+    assert res.status_code == 200
+    project_id = res.get_json()["project"]["id"]
+
+    res = client.get("/api/projects")
+    assert res.status_code == 200
+    assert any(p["id"] == project_id for p in res.get_json()["projects"])
+
+    res = client.patch(f"/api/projects/{project_id}", json={"name": "Renamed"})
+    assert res.status_code == 200
+    assert res.get_json()["project"]["name"] == "Renamed"
+
+    res = client.get(f"/api/projects/{project_id}")
+    assert res.status_code == 200
+    assert res.get_json()["project"]["name"] == "Renamed"
+
+    res = client.delete(f"/api/projects/{project_id}")
+    assert res.status_code == 200
+    assert client.get(f"/api/projects/{project_id}").status_code == 404
+
+
+def test_assets_and_configs_api_endpoints():
+    client, _ = _registered_client("lib-assets-api")
+    res = client.post("/api/assets", data={
+        "kind": "logo", "file": (__import__("io").BytesIO(b"\x89PNG\r\n\x1a\n"), "logo.png"),
+    }, content_type="multipart/form-data")
+    assert res.status_code == 200
+    asset_id = res.get_json()["asset"]["id"]
+    assert client.get("/api/assets").get_json()["assets"][0]["id"] == asset_id
+    assert client.delete(f"/api/assets/{asset_id}").status_code == 200
+
+    res = client.post("/api/configs/preset", json={"name": "API Preset", "data": {"sub_fontsize": "24"}})
+    assert res.status_code == 200
+    name = res.get_json()["config"]["name"]
+    assert client.get("/api/configs/preset").get_json()["configs"][0]["name"] == name
+    assert client.get(f"/api/configs/preset/{name}").status_code == 200
+
+
+# ── Webhook & Integrations tests ─────────────────────────────────────────────
+
+
+def test_webhook_crud_and_isolation():
+    user = models.create_user(f"wh_{uuid.uuid4().hex}@example.com", "password123")
+    other = models.create_user(f"wh_other_{uuid.uuid4().hex}@example.com", "password123")
+    wh = webhooks.create_webhook(user.id, "https://example.com/hook", "s3cr3t", "clip.done")
+    assert wh["url"] == "https://example.com/hook"
+    assert webhooks.get_webhook(other.id, wh["id"]) is None
+
+    updated = webhooks.update_webhook(user.id, wh["id"], is_active=False)
+    assert updated["is_active"] == 0
+    assert webhooks.delete_webhook(user.id, wh["id"])
+    with pytest.raises(ValueError):
+        webhooks.create_webhook(user.id, "ftp://bad", "s")
+
+
+def test_webhook_event_filtering_and_signature():
+    user = models.create_user(f"wh_evt_{uuid.uuid4().hex}@example.com", "password123")
+    wh_done = webhooks.create_webhook(user.id, "https://done.example/hook", "secret-done", "clip.done")
+    wh_all = webhooks.create_webhook(user.id, "https://all.example/hook", "secret-all", "*")
+    wh_err = webhooks.create_webhook(user.id, "https://err.example/hook", "secret-err", "clip.error")
+
+    queued = webhooks.dispatch_event(user.id, "clip.done", {"task_id": "t1"})
+    assert queued == 2  # wh_done + wh_all match; wh_err does not
+
+    deliveries = webhooks.list_deliveries(user.id)
+    events = {d["event"] for d in deliveries}
+    assert events == {"clip.done"}
+    assert {d["webhook_id"] for d in deliveries} == {wh_done["id"], wh_all["id"]}
+
+    # Signature is HMAC-SHA256 of the body with the webhook secret.
+    import hmac as _hmac, hashlib as _hl
+    body = deliveries[0]["payload"].encode("utf-8")
+    secret = webhooks.get_webhook(user.id, deliveries[0]["webhook_id"])["secret"]
+    expected = _hmac.new(secret.encode("utf-8"), body, _hl.sha256).hexdigest()
+    assert webhooks._sign(secret, body) == expected
+
+    for w in (wh_done, wh_all, wh_err):
+        webhooks.delete_webhook(user.id, w["id"])
+
+
+def test_webhook_delivery_retry_backoff():
+    user = models.create_user(f"wh_retry_{uuid.uuid4().hex}@example.com", "password123")
+    wh = webhooks.create_webhook(user.id, "https://nope.invalid.example.hook", "secret", "*")
+    webhooks.dispatch_event(user.id, "clip.error", {"task_id": "t-err", "error": "boom"})
+
+    # Force an immediate sweep; the bogus URL must fail and be marked for retry.
+    webhooks.process_pending(limit=10)
+    deliveries = webhooks.list_deliveries(user.id)
+    assert deliveries
+    d = deliveries[0]
+    assert d["status"] in ("retry", "failed")
+    assert d["attempts"] >= 1
+    assert d["last_error"]
+    webhooks.delete_webhook(user.id, wh["id"])
+
+
+def test_webhooks_api_endpoints():
+    client, _ = _registered_client("wh-api")
+    res = client.post("/api/webhooks", json={"url": "https://hook.example/cb", "secret": "s", "events": "clip.done"})
+    assert res.status_code == 200
+    wid = res.get_json()["webhook"]["id"]
+    assert client.get("/api/webhooks").get_json()["webhooks"][0]["id"] == wid
+    assert client.patch(f"/api/webhooks/{wid}", json={"is_active": False}).status_code == 200
+    assert client.get(f"/api/webhooks/{wid}/deliveries").status_code == 200
+    assert client.delete(f"/api/webhooks/{wid}").status_code == 200
+
+
+# ── API for Developers tests ─────────────────────────────────────────────────
+
+
+def test_api_key_create_verify_revoke():
+    user = models.create_user(f"key_{uuid.uuid4().hex}@example.com", "password123")
+    created = apikeys.create_api_key(user.id, "CI Pipeline")
+    assert created["key"].startswith("ck_live_")
+    assert apikeys.verify_api_key(created["key"]) == user.id
+    # Wrong/foreign key rejected
+    assert apikeys.verify_api_key("ck_live_notarealkey") is None
+    assert apikeys.verify_api_key("not-a-clipper-key") is None
+
+    key_id = created["id"]
+    assert apikeys.list_api_keys(user.id)[0]["id"] == key_id
+    # Plaintext is not persisted; only the hash is.
+    with models._connect() as conn:
+        row = conn.execute("SELECT key_hash FROM api_keys WHERE id = ?", (key_id,)).fetchone()
+    assert created["key"] not in row["key_hash"]
+
+    assert apikeys.set_api_key_active(user.id, key_id, False)
+    assert apikeys.verify_api_key(created["key"]) is None  # disabled
+    assert apikeys.revoke_api_key(user.id, key_id)
+    assert apikeys.list_api_keys(user.id) == []
+
+
+def test_developer_api_clip_lifecycle():
+    client = _auth_client()
+    email = f"dev_{uuid.uuid4().hex}@example.com"
+    client.post("/api/auth/register", json={"email": email, "password": "password123", "name": "Dev"})
+    user_id = models.get_user_by_email(email).id
+
+    created = apikeys.create_api_key(user_id, "Dev Key")
+    headers = {"Authorization": f"Bearer {created['key']}"}
+
+    # Unauthenticated request rejected
+    assert client.get("/api/v1/tasks").status_code == 401
+    # Bad key rejected
+    assert client.get("/api/v1/tasks", headers={"Authorization": "Bearer ck_live_bad"}).status_code == 401
+
+    # List tasks via API key
+    res = client.get("/api/v1/tasks", headers=headers)
+    assert res.status_code == 200
+    assert "tasks" in res.get_json()
+
+    # Create a task row directly, then fetch its status and delete via API.
+    task_id = f"dev-task-{uuid.uuid4().hex}"
+    models.create_task(task_id, user_id=user_id, params={"url": "https://x", "start": "0", "end": "5"})
+    res = client.get(f"/api/v1/clip/{task_id}", headers=headers)
+    assert res.status_code == 200
+    assert res.get_json()["task_id"] == task_id
+
+    # Another user's API key must not see this task.
+    other_email = f"dev_other_{uuid.uuid4().hex}@example.com"
+    client.post("/api/auth/register", json={"email": other_email, "password": "password123", "name": "Other"})
+    other_id = models.get_user_by_email(other_email).id
+    other_key = apikeys.create_api_key(other_id, "Other Key")["key"]
+    assert client.get(f"/api/v1/clip/{task_id}", headers={"Authorization": f"Bearer {other_key}"}).status_code == 404
+
+    # Delete via API
+    assert client.delete(f"/api/v1/clip/{task_id}", headers=headers).status_code == 200
+    assert models.get_task(task_id, user_id=user_id) is None
+
+
+def test_api_keys_management_api():
+    client, user_id = _registered_client("keys-api")
+    res = client.post("/api/keys", json={"name": "Test Key"})
+    assert res.status_code == 200
+    data = res.get_json()["key"]
+    assert data["key"].startswith("ck_live_")
+    key_id = data["id"]
+
+    res = client.get("/api/keys")
+    assert res.status_code == 200
+    assert any(k["id"] == key_id for k in res.get_json()["keys"])
+    # The plaintext must not come back on list.
+    assert "key" not in res.get_json()["keys"][0]
+
+    assert client.patch(f"/api/keys/{key_id}", json={"is_active": False}).status_code == 200
+    assert client.delete(f"/api/keys/{key_id}").status_code == 200

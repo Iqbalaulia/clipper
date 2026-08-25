@@ -78,22 +78,22 @@ Dokumen ini merinci fitur-fitur yang perlu dibangun untuk mengubah **Video Clipp
 - [x] Notifikasi in-app (badge/toast)
 
 ### Project / Folder / Asset Library
-- [ ] User bisa membuat project/folder
-- [ ] Organisasi clip per project
-- [ ] Upload custom BGM, B-roll, logo, font
-- [ ] Save preset subtitle & format favorite
-- [ ] Template project reusable
+- [x] User bisa membuat project/folder
+- [x] Organisasi clip per project
+- [x] Upload custom BGM, B-roll, logo, font
+- [x] Save preset subtitle & format favorite
+- [x] Template project reusable
 
 ### Webhook & Integrasi
-- [ ] Endpoint webhook per user untuk event `clip.done`, `clip.error`
-- [ ] Retry policy untuk webhook gagal
-- [ ] Secret signature untuk verifikasi webhook
+- [x] Endpoint webhook per user untuk event `clip.done`, `clip.error`
+- [x] Retry policy untuk webhook gagal
+- [x] Secret signature untuk verifikasi webhook
 
 ### API for Developers
-- [ ] REST API key per user
-- [ ] Endpoint programmatic: clip, status, download, delete
+- [x] REST API key per user
+- [x] Endpoint programmatic: clip, status, download, delete
 - [ ] API documentation (Swagger / Postman)
-- [ ] Rate limit khusus API key
+- [x] Rate limit khusus API key
 
 ---
 

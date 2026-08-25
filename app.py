@@ -50,6 +50,9 @@ import cloud_storage
 import saas
 import social_auth
 import notifications
+import library
+import webhooks
+import apikeys
 
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR  = os.path.join(BASE_DIR, "outputs")
@@ -161,6 +164,36 @@ def admin_required(f):
     return decorated_function
 
 
+def api_key_required(f):
+    """Authenticate a developer REST endpoint via Bearer token or X-API-Key.
+
+    On success the resolved user is injected as `request._jwt_user` so the
+    existing `_current_user_id()` / `current_user` helpers work unchanged.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = ""
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:].strip()
+        else:
+            token = (request.headers.get("X-API-Key") or "").strip()
+        user_id = apikeys.verify_api_key(token)
+        if not user_id:
+            return jsonify({"error": "API key tidak valid atau tidak aktif."}), 401
+        allowed, retry_after = saas.check_rate_limit(
+            f"apikey:{user_id}", apikeys.API_KEY_RATE_LIMIT, apikeys.API_KEY_RATE_WINDOW,
+        )
+        if not allowed:
+            resp = jsonify({"error": "Rate limit API key tercapai.", "retry_after": retry_after})
+            resp.status_code = 429
+            resp.headers["Retry-After"] = str(retry_after)
+            return resp
+        request._jwt_user = models.get_user_by_id(user_id)
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def _generate_token() -> str:
     """Generate a URL-safe random token."""
     return secrets.token_urlsafe(32)
@@ -239,6 +272,9 @@ MAX_CONCURRENT_WORKERS = int(os.environ.get("CLIPPER_MAX_WORKERS", "2"))
 TASK_TIMEOUT = int(os.environ.get("CLIPPER_TASK_TIMEOUT", "3600"))
 FREE_TASKS_PER_DAY = int(os.environ.get("FREE_TASKS_PER_DAY", "5"))
 task_queue.get_queue(max_workers=MAX_CONCURRENT_WORKERS, task_timeout=TASK_TIMEOUT)
+
+# Start the outbound webhook delivery sweeper (daemon thread, no-op if no webhooks).
+webhooks.start_sweeper()
 
 
 def _current_user_id():
@@ -874,6 +910,13 @@ def clip():
         output_dir=user_output_dir, kwargs=kwargs,
         user_id=user_id,
     )
+
+    project_id = data.get("project_id")
+    if project_id is not None:
+        try:
+            library.assign_task_to_project(user_id, task_id, int(project_id))
+        except (ValueError, TypeError):
+            pass
 
     return jsonify({"task_id": task_id})
 
@@ -1998,6 +2041,330 @@ def admin_update_plan(plan_code: str):
     except (ValueError, TypeError) as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"success": True, "plan": saas.public_plans()[plan_code]})
+
+
+# ── Project / Folder / Asset Library ─────────────────────────────────────────
+
+
+@app.route("/api/projects", methods=["GET", "POST"])
+@login_required
+def projects():
+    user_id = _current_user_id()
+    if request.method == "GET":
+        return jsonify({"projects": library.list_projects(user_id)})
+    data = request.get_json(force=True) or {}
+    try:
+        project = library.create_project(user_id, data.get("name", ""), data.get("description", ""))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "project": project})
+
+
+@app.route("/api/projects/<int:project_id>", methods=["GET", "PATCH", "DELETE"])
+@login_required
+def project_detail(project_id: int):
+    user_id = _current_user_id()
+    if request.method == "GET":
+        project = library.get_project(user_id, project_id)
+        if not project:
+            return jsonify({"error": "Project tidak ditemukan."}), 404
+        project["tasks"] = library.list_project_tasks(user_id, project_id)
+        return jsonify({"project": project})
+    if request.method == "DELETE":
+        if not library.delete_project(user_id, project_id):
+            return jsonify({"error": "Project tidak ditemukan."}), 404
+        return jsonify({"success": True})
+    data = request.get_json(force=True) or {}
+    try:
+        project = library.update_project(
+            user_id, project_id, data.get("name"), data.get("description"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not project:
+        return jsonify({"error": "Project tidak ditemukan."}), 404
+    return jsonify({"success": True, "project": project})
+
+
+@app.route("/api/projects/<int:project_id>/tasks/<task_id>", methods=["POST"])
+@login_required
+def project_assign_task(project_id: int, task_id: str):
+    user_id = _current_user_id()
+    try:
+        ok = library.assign_task_to_project(user_id, task_id, project_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    if not ok:
+        return jsonify({"error": "Task tidak ditemukan atau bukan milik Anda."}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/api/projects/<int:project_id>/tasks/<task_id>", methods=["DELETE"])
+@login_required
+def project_unassign_task(project_id: int, task_id: str):
+    user_id = _current_user_id()
+    if not library.assign_task_to_project(user_id, task_id, None):
+        return jsonify({"error": "Task tidak ditemukan atau bukan milik Anda."}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/api/assets", methods=["GET", "POST"])
+@login_required
+def assets():
+    user_id = _current_user_id()
+    if request.method == "GET":
+        return jsonify({"assets": library.list_assets(user_id, request.args.get("kind") or None)})
+    if "file" not in request.files:
+        return jsonify({"error": "File wajib diunggah."}), 400
+    f = request.files["file"]
+    kind = (request.form.get("kind") or "").strip().lower()
+    try:
+        asset = library.save_asset(
+            user_id, kind, f.filename or "", f.read(),
+            content_type=f.mimetype or "",
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "asset": asset})
+
+
+@app.route("/api/assets/<int:asset_id>", methods=["DELETE"])
+@login_required
+def asset_delete(asset_id: int):
+    if not library.delete_asset(_current_user_id(), asset_id):
+        return jsonify({"error": "Asset tidak ditemukan."}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/api/configs/<kind>", methods=["GET", "POST"])
+@login_required
+def configs(kind: str):
+    user_id = _current_user_id()
+    if request.method == "GET":
+        return jsonify({"configs": library.list_configs(user_id, kind)})
+    data = request.get_json(force=True) or {}
+    try:
+        cfg = library.save_config(user_id, kind, data.get("name", ""), data.get("data", {}) or {})
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "config": cfg})
+
+
+@app.route("/api/configs/<kind>/<name>", methods=["GET"])
+@login_required
+def config_detail(kind: str, name: str):
+    cfg = library.get_config(_current_user_id(), kind, name)
+    if not cfg:
+        return jsonify({"error": "Konfigurasi tidak ditemukan."}), 404
+    return jsonify({"config": cfg})
+
+
+@app.route("/api/configs/item/<int:config_id>", methods=["DELETE"])
+@login_required
+def config_delete(config_id: int):
+    if not library.delete_config(_current_user_id(), config_id):
+        return jsonify({"error": "Konfigurasi tidak ditemukan."}), 404
+    return jsonify({"success": True})
+
+
+# ── Webhook & Integrations ───────────────────────────────────────────────────
+
+
+@app.route("/api/webhooks", methods=["GET", "POST"])
+@login_required
+def webhooks_route():
+    user_id = _current_user_id()
+    if request.method == "GET":
+        return jsonify({"webhooks": webhooks.list_webhooks(user_id)})
+    data = request.get_json(force=True) or {}
+    try:
+        webhook = webhooks.create_webhook(
+            user_id, data.get("url", ""), data.get("secret", ""), data.get("events", "*"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "webhook": webhook})
+
+
+@app.route("/api/webhooks/<int:webhook_id>", methods=["PATCH", "DELETE"])
+@login_required
+def webhook_detail(webhook_id: int):
+    user_id = _current_user_id()
+    if request.method == "DELETE":
+        if not webhooks.delete_webhook(user_id, webhook_id):
+            return jsonify({"error": "Webhook tidak ditemukan."}), 404
+        return jsonify({"success": True})
+    data = request.get_json(force=True) or {}
+    try:
+        webhook = webhooks.update_webhook(
+            user_id, webhook_id,
+            url=data.get("url"), events=data.get("events"),
+            is_active=data.get("is_active"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not webhook:
+        return jsonify({"error": "Webhook tidak ditemukan."}), 404
+    return jsonify({"success": True, "webhook": webhook})
+
+
+@app.route("/api/webhooks/<int:webhook_id>/deliveries")
+@login_required
+def webhook_deliveries(webhook_id: int):
+    limit = request.args.get("limit", 50, type=int)
+    return jsonify({"deliveries": webhooks.list_deliveries(_current_user_id(), webhook_id, limit=limit)})
+
+
+@app.route("/api/webhooks/<int:webhook_id>/test", methods=["POST"])
+@login_required
+def webhook_test(webhook_id: int):
+    """Dispatch a synthetic test event so the user can verify their receiver."""
+    user_id = _current_user_id()
+    webhook = webhooks.get_webhook(user_id, webhook_id)
+    if not webhook:
+        return jsonify({"error": "Webhook tidak ditemukan."}), 404
+    queued = webhooks.dispatch_event(user_id, "clip.done", {"task_id": "test", "test": True})
+    # Try to deliver immediately rather than waiting for the sweeper.
+    webhooks.process_pending(limit=10)
+    return jsonify({"success": True, "queued": queued})
+
+
+# ── API keys management ──────────────────────────────────────────────────────
+
+
+@app.route("/api/keys", methods=["GET", "POST"])
+@login_required
+def api_keys():
+    user_id = _current_user_id()
+    if request.method == "GET":
+        return jsonify({"keys": apikeys.list_api_keys(user_id)})
+    data = request.get_json(force=True) or {}
+    try:
+        created = apikeys.create_api_key(user_id, data.get("name", ""))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"success": True, "key": created})
+
+
+@app.route("/api/keys/<int:key_id>", methods=["DELETE", "PATCH"])
+@login_required
+def api_key_detail(key_id: int):
+    user_id = _current_user_id()
+    if request.method == "DELETE":
+        if not apikeys.revoke_api_key(user_id, key_id):
+            return jsonify({"error": "API key tidak ditemukan."}), 404
+        return jsonify({"success": True})
+    data = request.get_json(force=True) or {}
+    if "is_active" in data:
+        apikeys.set_api_key_active(user_id, key_id, bool(data["is_active"]))
+    return jsonify({"success": True, "keys": apikeys.list_api_keys(user_id)})
+
+
+# ── Developer REST API (API-key authenticated) ───────────────────────────────
+
+
+@app.route("/api/v1/clip", methods=["POST"])
+@api_key_required
+def v1_clip():
+    """Create a clip task programmatically. Returns task_id immediately."""
+    data = request.get_json(force=True) or {}
+    url = (data.get("url") or "").strip()
+    start = (data.get("start") or "").strip()
+    end = (data.get("end") or "").strip()
+    if not url or not start or not end:
+        return jsonify({"error": "URL, start, dan end wajib diisi."}), 400
+
+    quota_response = _quota_error()
+    if quota_response:
+        return quota_response
+    user_id = _current_user_id()
+    user_output_dir = get_user_output_dir(user_id)
+    task_id = str(uuid.uuid4())
+    kwargs = {
+        "subtitle_enabled": bool(data.get("subtitle_enabled", False)),
+        "subtitle_lang": (data.get("subtitle_lang") or "id,en").strip(),
+        "subtitle_type": (data.get("subtitle_type") or "soft").strip(),
+        "subtitle_position": (data.get("subtitle_position") or "bottom").strip(),
+        "sub_fontsize": str(data.get("sub_fontsize") or "20").strip(),
+        "bgm_type": (data.get("bgm_type") or "none").strip(),
+        "video_format": (data.get("video_format") or "original").strip(),
+        "hook_title": (data.get("hook_title") or "").strip(),
+        "hook_preset": (data.get("hook_preset") or "yellow-pop").strip(),
+        "hook_position": (data.get("hook_position") or "top").strip(),
+        "cookies_user_id": user_id,
+        "auto_broll": bool(data.get("auto_broll", False)),
+        "transcription_source": (data.get("transcription_source") or "auto").strip(),
+        "whisper_model": (data.get("whisper_model") or "base").strip(),
+        "download_resolution": (data.get("download_resolution") or "best").strip().lower(),
+        "output_resolution": (data.get("output_resolution") or "1080").strip().lower(),
+        "output_quality": (data.get("output_quality") or "standard").strip().lower(),
+    }
+    try:
+        saas.consume_task_usage(user_id, task_id, start, end)
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "usage": saas.usage_summary(user_id)}), 429
+    task_queue.submit_task(task_id, url, start, end, user_output_dir, kwargs, user_id=user_id)
+    project_id = data.get("project_id")
+    if project_id is not None:
+        try:
+            library.assign_task_to_project(user_id, task_id, int(project_id))
+        except (ValueError, TypeError):
+            pass
+    return jsonify({"task_id": task_id, "status": "pending"})
+
+
+@app.route("/api/v1/clip/<task_id>", methods=["GET"])
+@api_key_required
+def v1_clip_status(task_id: str):
+    task = clipper.get_task(task_id, user_id=_current_user_id())
+    if not task:
+        return jsonify({"error": "Task tidak ditemukan."}), 404
+    payload = {
+        "task_id": task["id"],
+        "status": task["status"],
+        "progress": task["progress"],
+        "error": task.get("error"),
+        "output_file": task.get("output_file"),
+        "virality_score": task.get("virality_score"),
+        "thumbnail_file": task.get("thumbnail_file"),
+        "created_at": task.get("created_at"),
+        "updated_at": task.get("updated_at"),
+        "project_id": task.get("project_id"),
+    }
+    payload.update(_asset_payload(task))
+    return jsonify(payload)
+
+
+@app.route("/api/v1/clip/<task_id>/download", methods=["GET"])
+@api_key_required
+def v1_clip_download(task_id: str):
+    task = clipper.get_task(task_id, user_id=_current_user_id())
+    if not task or not task.get("output_file"):
+        return jsonify({"error": "Task atau file tidak ditemukan."}), 404
+    asset = cloud_storage.get_asset_by_filename(task["output_file"], _current_user_id(), "clip")
+    signed = cloud_storage.signed_url(asset, download=True)
+    if signed:
+        return redirect(signed)
+    return send_from_directory(get_user_output_dir(_current_user_id()), task["output_file"], as_attachment=True)
+
+
+@app.route("/api/v1/clip/<task_id>", methods=["DELETE"])
+@api_key_required
+def v1_clip_delete(task_id: str):
+    if not models.task_belongs_to_user(task_id, _current_user_id()):
+        return jsonify({"error": "Task tidak ditemukan."}), 404
+    task_queue.cancel_task(task_id)
+    ok = models.delete_task(task_id, user_id=_current_user_id())
+    return jsonify({"success": bool(ok)})
+
+
+@app.route("/api/v1/tasks", methods=["GET"])
+@api_key_required
+def v1_tasks_list():
+    status = request.args.get("status") or None
+    limit = min(request.args.get("limit", 100, type=int), 500)
+    tasks = models.list_tasks(status=status, user_id=_current_user_id(), limit=limit)
+    return jsonify({"tasks": tasks})
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────

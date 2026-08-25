@@ -29448,3 +29448,30 @@ TypeError: list indices must be integers or slices, not str
  * Running on http://127.0.0.1:5000
  * Running on http://192.168.110.159:5000
 2026-08-25 07:52:46,536 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-08-25 08:00:02,269 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:02] "GET / HTTP/1.1" 200 -
+2026-08-25 08:00:02,714 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:02] "GET /static/style.css HTTP/1.1" 200 -
+2026-08-25 08:00:02,716 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:02] "GET /static/admin_dashboard.js HTTP/1.1" 200 -
+2026-08-25 08:00:02,718 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:02] "GET /static/app.js?v=3 HTTP/1.1" 200 -
+2026-08-25 08:00:03,332 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:03] "GET /api/auth/social/providers HTTP/1.1" 200 -
+2026-08-25 08:00:03,651 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:03] "GET /api/auth/me HTTP/1.1" 200 -
+2026-08-25 08:00:03,656 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:03] "[31m[1mGET /cookies-status HTTP/1.1[0m" 401 -
+2026-08-25 08:00:06,156 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:06] "POST /api/auth/login HTTP/1.1" 200 -
+2026-08-25 08:00:06,259 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:00:06] "GET /check-deps HTTP/1.1" 200 -
+2026-08-25 08:07:33,907 [INFO] clipper: Task queue started with 2 workers
+2026-08-25 08:07:33,992 [INFO] werkzeug: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.110.159:5000
+2026-08-25 08:07:33,992 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-08-25 08:08:11,129 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:11] "GET / HTTP/1.1" 200 -
+2026-08-25 08:08:11,293 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:11] "GET /static/style.css HTTP/1.1" 200 -
+2026-08-25 08:08:11,365 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:11] "GET /static/app.js?v=3 HTTP/1.1" 200 -
+2026-08-25 08:08:11,480 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:11] "GET /static/admin_dashboard.js HTTP/1.1" 200 -
+2026-08-25 08:08:12,095 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:12] "GET /api/auth/social/providers HTTP/1.1" 200 -
+2026-08-25 08:08:12,106 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:12] "[31m[1mGET /cookies-status HTTP/1.1[0m" 422 -
+2026-08-25 08:08:12,103 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:12] "GET /api/auth/me HTTP/1.1" 200 -
+2026-08-25 08:08:13,103 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:13] "GET /check-deps HTTP/1.1" 200 -
+2026-08-25 08:08:14,269 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:08:14] "POST /api/auth/login HTTP/1.1" 200 -
+2026-08-25 08:11:11,904 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:11:11] "GET /api/auth/profile HTTP/1.1" 200 -
+2026-08-25 08:11:11,907 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:11:11] "GET /api/plans HTTP/1.1" 200 -
+2026-08-25 08:11:11,992 [INFO] werkzeug: 127.0.0.1 - - [25/Aug/2026 08:11:11] "GET /api/subscription HTTP/1.1" 200 -

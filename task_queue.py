@@ -22,6 +22,26 @@ import notifications
 logger = logging.getLogger("clipper")
 
 
+def _dispatch_webhook(user_id, event: str, task_id: str) -> None:
+    """Fire an outbound webhook event for a finished task (best-effort)."""
+    try:
+        import webhooks as _webhooks
+        task = models.get_task(task_id, user_id=user_id)
+        if not task:
+            return
+        payload = {
+            "task_id": task_id,
+            "status": task.get("status"),
+            "output_file": task.get("output_file"),
+            "error": task.get("error"),
+            "project_id": task.get("project_id"),
+        }
+        _webhooks.dispatch_event(user_id, event, payload)
+        _webhooks.process_pending(limit=20)
+    except Exception:
+        logger.exception("Webhook dispatch failed for task %s", task_id)
+
+
 @dataclass
 class TaskItem:
     task_id: str
@@ -177,10 +197,20 @@ class TaskQueue:
                         args=(item.user_id, task_id),
                         daemon=True,
                     ).start()
+                    threading.Thread(
+                        target=_dispatch_webhook,
+                        args=(item.user_id, "clip.done", task_id),
+                        daemon=True,
+                    ).start()
                 elif task and task.get("status") == "error":
                     threading.Thread(
                         target=notifications.notify_task_failed,
                         args=(item.user_id, task_id),
+                        daemon=True,
+                    ).start()
+                    threading.Thread(
+                        target=_dispatch_webhook,
+                        args=(item.user_id, "clip.error", task_id),
                         daemon=True,
                     ).start()
             except Exception:
